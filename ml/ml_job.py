@@ -134,11 +134,13 @@ def run_ml_job():
         df["name_customer"] = df.get("company_name", "")
 
     # 3.5 Determine open vs closed flags
-    if "is_open" in df.columns:
-        df["is_open_flag"] = df["is_open"].astype(bool)
-    elif "isOpen" in df.columns:
-        df["is_open_flag"] = df["isOpen"].astype(bool)
+    if "isOpen" in df.columns:
+    # isOpen comes as string "0"/"1"
+        df["is_open_flag"] = df["isOpen"].astype(str).isin(["1", "true", "True"])
+    elif "is_open" in df.columns:
+        df["is_open_flag"] = df["is_open"] == 1
     else:
+        # fallback
         df["is_open_flag"] = df["clear_date"].isna()
 
     history_df = df[~df["is_open_flag"]].copy()

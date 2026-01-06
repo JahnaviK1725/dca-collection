@@ -1,34 +1,14 @@
-const CallsOverview = ({ calls = [] }) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+import React from "react";
 
-  /* ======================
-     METRICS
-  ====================== */
-
-  const callsToday = calls.filter((c) => {
-    const t = new Date(c.timestamp);
-    t.setHours(0, 0, 0, 0);
-    return t.getTime() === today.getTime();
-  }).length;
-
-  const pendingFollowUps = calls.filter(
-    (c) =>
-      c.nextActionDate &&
-      new Date(c.nextActionDate) < new Date()
+const CallsOverview = ({ cases = [] }) => {
+  // Logic: "Promise to Pay" candidates are those we need to call, 
+  // but ML predicts they will pay soon (e.g. within 5 days), 
+  // so the conversation is likely positive.
+  const likelyToPaySoon = cases.filter(c => 
+    c.predicted_delay !== null && c.predicted_delay <= 5
   ).length;
 
-  const promiseToPay = calls.filter(
-    (c) => c.outcome === "PROMISE_TO_PAY"
-  ).length;
-
-  const recentCalls = [...calls]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 5);
-
-  /* ======================
-     UI
-  ====================== */
+  const highRiskCalls = cases.length - likelyToPaySoon;
 
   return (
     <div
@@ -37,88 +17,55 @@ const CallsOverview = ({ calls = [] }) => {
         padding: 20,
         borderRadius: 14,
         boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-        marginBottom: 32,
       }}
     >
-      <h3 style={{ marginBottom: 16 }}>📞 Calls Overview</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>📞 Today's Call List</h3>
 
-      {/* METRICS ROW */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 20,
-        }}
-      >
-        <Metric label="Calls Today" value={callsToday} />
-        <Metric label="Pending Follow-ups" value={pendingFollowUps} />
-        <Metric label="Promise to Pay" value={promiseToPay} />
-      </div>
-
-      {/* RECENT CALLS */}
-      <div>
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            marginBottom: 8,
-            color: "#555",
-          }}
-        >
-          Recent Calls
+      <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+        {/* Metric 1 */}
+        <div style={{ flex: 1, textAlign: "center", background: "#f8f9fa", padding: 10, borderRadius: 8 }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#2c3e50" }}>{cases.length}</div>
+          <div style={{ fontSize: 11, color: "#777", textTransform: "uppercase" }}>Total Calls</div>
         </div>
 
-        {recentCalls.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#777" }}>
-            No calls logged yet
-          </div>
-        ) : (
-          <ul style={{ paddingLeft: 16 }}>
-            {recentCalls.map((c) => (
-              <li key={c.id} style={{ marginBottom: 6 }}>
-                <strong>{c.customer}</strong> —{" "}
-                <OutcomePill outcome={c.outcome} />
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* Metric 2 */}
+        <div style={{ flex: 1, textAlign: "center", background: "#e8f6f3", padding: 10, borderRadius: 8 }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#27ae60" }}>{likelyToPaySoon}</div>
+          <div style={{ fontSize: 11, color: "#27ae60", textTransform: "uppercase" }}>Likely to Pay</div>
+        </div>
       </div>
+
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "#555" }}>
+        Prioritized List
+      </div>
+
+      {cases.length === 0 ? (
+        <div style={{ fontSize: 13, color: "#999" }}>No calls required right now.</div>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {cases.slice(0, 5).map((c) => (
+            <li key={c.id} style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+              <div 
+                style={{ 
+                  width: 8, 
+                  height: 8, 
+                  borderRadius: "50%", 
+                  background: c.predicted_delay > 10 ? "#e74c3c" : "#f1c40f",
+                  marginRight: 10 
+                }} 
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{c.company_name}</div>
+                <div style={{ fontSize: 11, color: "#777" }}>Pred: {Math.round(c.predicted_delay)}d late</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                ₹{(c.invoice_amount / 1000).toFixed(1)}k
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
-  );
-};
-
-/* ======================
-   SUB COMPONENTS
-====================== */
-
-const Metric = ({ label, value }) => (
-  <div>
-    <div style={{ fontSize: 12, color: "#777" }}>{label}</div>
-    <div style={{ fontSize: 22, fontWeight: 600 }}>{value}</div>
-  </div>
-);
-
-const OutcomePill = ({ outcome }) => {
-  const colors = {
-    CONNECTED: "#3498db",
-    PROMISE_TO_PAY: "#2ecc71",
-    NO_ANSWER: "#f1c40f",
-    DISPUTED: "#e67e22",
-  };
-
-  return (
-    <span
-      style={{
-        padding: "2px 8px",
-        borderRadius: 12,
-        background: colors[outcome] || "#ccc",
-        color: "#fff",
-        fontSize: 11,
-        marginLeft: 6,
-      }}
-    >
-      {outcome.replaceAll("_", " ")}
-    </span>
   );
 };
 

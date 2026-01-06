@@ -19,11 +19,11 @@ const app = initializeApp(firebaseConfig);
  * 🚨 Firestore ONLY - Long polling + no streams = NO WebSocket errors
  */
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  useFetchStreams: false,
+  // experimentalForceLongPolling: true,
+  // useFetchStreams: false,
 });
 
 if (window.location.hostname === "localhost") {
-  connectFirestoreEmulator(db, "localhost", 8085);
+  connectFirestoreEmulator(db, "127.0.0.1", 8085);
   console.log("🔥 Firestore Emulator connected (long polling)");
 }
