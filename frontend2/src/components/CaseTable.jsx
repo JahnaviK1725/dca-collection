@@ -1,3 +1,6 @@
+import { useNavigate } from "react-router-dom";
+
+/* ---------------- ZONE BADGE (UNCHANGED) ---------------- */
 const ZoneBadge = ({ zone }) => {
   const colors = {
     GREEN: "#2ecc71",
@@ -23,7 +26,10 @@ const ZoneBadge = ({ zone }) => {
   );
 };
 
+/* ---------------- CASE TABLE ---------------- */
 const CaseTable = ({ cases }) => {
+  const navigate = useNavigate(); // 👈 ADD THIS
+
   return (
     <table width="100%" style={{ borderCollapse: "collapse" }}>
       <thead>
@@ -35,12 +41,30 @@ const CaseTable = ({ cases }) => {
           <th align="center">Zone</th>
         </tr>
       </thead>
+
       <tbody>
         {cases.map((c) => (
-          <tr key={c.id} style={{ borderBottom: "1px solid #eee" }}>
+          <tr
+            key={c.id}
+            onClick={() => navigate(`/case/${c.id}`)} // 👈 CLICK HANDLER
+            style={{
+              borderBottom: "1px solid #eee",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "#f9fafb")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
+          >
             <td>{c.invoice_id}</td>
             <td>{c.name_customer}</td>
-            <td align="right">₹{c.total_open_amount.toFixed(2)}</td>
+            <td align="right">
+              ₹{c.total_open_amount.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+              })}
+            </td>
             <td align="right">{c.daysOverdue}</td>
             <td align="center">
               <ZoneBadge zone={c.zone} />
