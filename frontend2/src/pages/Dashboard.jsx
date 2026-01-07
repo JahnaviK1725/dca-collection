@@ -3,15 +3,14 @@ import {
   collection,
   onSnapshot,
   query,
-  orderBy,
-  where
-} from "firebase/firestore";
+  orderBy} from "firebase/firestore";
 import { db } from "../firebase.js";
 
 import CaseTable from "../components/CaseTable.jsx";
 import ZoneSummary from "../components/ZoneSummary.jsx";
 import SlaBreachList from "../components/SlaBreachList.jsx";
 import CallsOverview from "../components/CallsOverview.jsx";
+import CashForecast from "../components/CashForecast.jsx"; // <--- Add this
 
 const Dashboard = () => {
   const [cases, setCases] = useState([]);
@@ -125,6 +124,7 @@ const Dashboard = () => {
 
         {/* RIGHT COLUMN: Sidebar Widgets */}
         <div style={{ flex: 1, minWidth: "300px" }}>
+          <CashForecast cases={cases} />
           <SlaBreachList cases={slaBreachedCases} />
           <CallsOverview cases={callActionCases} />
         </div>

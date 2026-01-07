@@ -8,7 +8,6 @@ const CallsOverview = ({ cases = [] }) => {
     c.predicted_delay !== null && c.predicted_delay <= 5
   ).length;
 
-  const highRiskCalls = cases.length - likelyToPaySoon;
 
   return (
     <div
