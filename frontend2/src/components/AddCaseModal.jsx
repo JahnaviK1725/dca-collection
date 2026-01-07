@@ -13,7 +13,18 @@ const AddCaseModal = ({ onClose }) => {
     due_date: ""
   });
 
-  // 1. FETCH EXISTING COMPANIES FOR AUTOCOMPLETE
+  // --- HELPER: Translate Python logic to JS ---
+  const deriveSlaDays = (lateRatio) => {
+    // Default fallback (equivalent to try/except)
+    if (typeof lateRatio !== 'number') return 15;
+
+    if (lateRatio >= 0.8) return 3;
+    else if (lateRatio >= 0.5) return 5;
+    else if (lateRatio >= 0.2) return 10;
+    else return 15;
+  };
+
+  // 1. FETCH EXISTING COMPANIES
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
@@ -23,8 +34,9 @@ const AddCaseModal = ({ onClose }) => {
             const data = doc.data();
             if (data.company_name) {
                 list.push({ 
-                    id: doc.id, // This is the cust_number
-                    name: data.company_name 
+                    id: doc.id, 
+                    name: data.company_name,
+                    late_payment_ratio: data.late_payment_ratio || 0 
                 });
             }
         });
@@ -49,15 +61,16 @@ const AddCaseModal = ({ onClose }) => {
       );
 
       let finalCustNumber = "";
+      let currentLateRatio = 0.0;
 
       if (match) {
-          // A. EXISTING COMPANY: Use their ID
+          // A. EXISTING COMPANY
           finalCustNumber = match.id;
+          currentLateRatio = match.late_payment_ratio;
           console.log("Linked to existing company:", match.name);
       } else {
-          // B. NEW COMPANY: Create Profile + Generate ID
-          // Generate a simple ID like 'MANUAL-1709...'
-          finalCustNumber = `MANUAL-${Date.now()}`; 
+          // B. NEW COMPANY
+          finalCustNumber = `MANUAL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`; 
           
           const default_company = {
             avg_due_days: 30, 
@@ -66,36 +79,50 @@ const AddCaseModal = ({ onClose }) => {
             avg_days_to_clear: 30, 
             avg_invoice_amount: 0, 
             transaction_count: 0, 
-            late_payment_ratio: 0,
-            // Important: Save the name and ID too
+            late_payment_ratio: 0.0,
             company_name: cleanName,
             cust_number: finalCustNumber
           };
 
-          // Write to 'company_features' collection
           await setDoc(doc(db, "company_features", finalCustNumber), default_company);
           console.log("Created new company profile for:", cleanName);
       }
 
+      // --- CALCULATE SLA FIELDS ---
+      // 1. Get days based on risk logic
+      const calculatedSlaDays = deriveSlaDays(currentLateRatio);
+
+      // 2. Calculate SLA Date (Today + SLA Days)
+      const slaDateObj = new Date();
+      slaDateObj.setDate(slaDateObj.getDate() + calculatedSlaDays);
+      const slaDateString = slaDateObj.toISOString().split('T')[0];
+
       // 3. CREATE THE CASE
       await addDoc(collection(db, "cases"), {
-        // Core Fields
+        // --- Core User Input ---
         invoice_id: formData.invoice_id,
         name_customer: cleanName,
-        cust_number: finalCustNumber, // <--- Links invoice to the profile
+        cust_number: finalCustNumber,
         total_open_amount: Number(formData.amount),
         due_date: formData.due_date,
+        document_create_date: new Date().toISOString().split('T')[0],
+
+        // --- Required Feature Fields ---
+        predicted_delay: 0.0,
+        predicted_payment_date: formData.due_date,
         
-        // Defaults for Manual Entry
-        is_open_flag: true,
+        // Updated Logic here:
+        sla_days: parseInt(calculatedSlaDays),
+        sla_date: slaDateString, 
+        
         zone: "GREEN",
         action: "NO_ACTION",
-        predicted_delay: 0,
         escalated: false,
         
-        // Timestamps
-        document_create_date: new Date().toISOString().split('T')[0],
-        last_predicted_at: serverTimestamp()
+        late_payment_ratio: Number(currentLateRatio),
+        
+        last_predicted_at: serverTimestamp(),
+        is_open_flag: true
       });
 
       alert(`Success! Added invoice for ${cleanName}`);
@@ -132,14 +159,13 @@ const AddCaseModal = ({ onClose }) => {
             <label style={styles.label}>Customer Name</label>
             <input 
               required 
-              list="company-list" // <--- CONNECTS TO DATALIST
+              list="company-list"
               style={styles.input}
               value={formData.customer_name}
               onChange={e => setFormData({...formData, customer_name: e.target.value})}
               placeholder="Start typing to search..."
               autoComplete="off"
             />
-            {/* 4. AUTOCOMPLETE LIST */}
             <datalist id="company-list">
                 {existingCompanies.map((c) => (
                     <option key={c.id} value={c.name} />
