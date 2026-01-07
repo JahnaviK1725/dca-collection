@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { collection, addDoc, getDocs, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase.js";
 
@@ -6,6 +6,11 @@ const AddCaseModal = ({ onClose }) => {
   const [loading, setLoading] = useState(false);
   const [existingCompanies, setExistingCompanies] = useState([]);
   
+  // --- NEW: Search States ---
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [filteredCompanies, setFilteredCompanies] = useState([]);
+  const wrapperRef = useRef(null); // To handle clicking outside
+
   const [formData, setFormData] = useState({
     invoice_id: "",
     customer_name: "",
@@ -13,18 +18,14 @@ const AddCaseModal = ({ onClose }) => {
     due_date: ""
   });
 
-  // --- HELPER: Translate Python logic to JS ---
   const deriveSlaDays = (lateRatio) => {
-    // Default fallback (equivalent to try/except)
     if (typeof lateRatio !== 'number') return 15;
-
     if (lateRatio >= 0.8) return 3;
     else if (lateRatio >= 0.5) return 5;
     else if (lateRatio >= 0.2) return 10;
     else return 15;
   };
 
-  // 1. FETCH EXISTING COMPANIES
   useEffect(() => {
     const fetchCompanies = async () => {
       try {
@@ -41,12 +42,43 @@ const AddCaseModal = ({ onClose }) => {
             }
         });
         setExistingCompanies(list);
+        setFilteredCompanies(list); // Initialize filtered list
       } catch (err) {
         console.error("Error loading companies:", err);
       }
     };
     fetchCompanies();
   }, []);
+
+  // --- NEW: Close dropdown if clicked outside ---
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [wrapperRef]);
+
+  // --- NEW: Handle Input Change & Filtering ---
+  const handleNameChange = (e) => {
+    const val = e.target.value;
+    setFormData({ ...formData, customer_name: val });
+    
+    // Filter the list based on typing
+    const matches = existingCompanies.filter(c => 
+        c.name.toLowerCase().includes(val.toLowerCase())
+    );
+    setFilteredCompanies(matches);
+    setShowSuggestions(true);
+  };
+
+  // --- NEW: Handle Selection from Dropdown ---
+  const selectCompany = (name) => {
+    setFormData({ ...formData, customer_name: name });
+    setShowSuggestions(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -55,7 +87,6 @@ const AddCaseModal = ({ onClose }) => {
     try {
       const cleanName = formData.customer_name.trim();
       
-      // 2. CHECK IF COMPANY EXISTS
       const match = existingCompanies.find(
           c => c.name.toLowerCase() === cleanName.toLowerCase()
       );
@@ -64,63 +95,38 @@ const AddCaseModal = ({ onClose }) => {
       let currentLateRatio = 0.0;
 
       if (match) {
-          // A. EXISTING COMPANY
           finalCustNumber = match.id;
           currentLateRatio = match.late_payment_ratio;
-          console.log("Linked to existing company:", match.name);
       } else {
-          // B. NEW COMPANY
           finalCustNumber = `MANUAL-${Math.random().toString(36).substring(2, 8).toUpperCase()}`; 
-          
           const default_company = {
-            avg_due_days: 30, 
-            avg_payment_delay: 0, 
-            std_payment_delay: 0,
-            avg_days_to_clear: 30, 
-            avg_invoice_amount: 0, 
-            transaction_count: 0, 
-            late_payment_ratio: 0.0,
-            company_name: cleanName,
-            cust_number: finalCustNumber
+            avg_due_days: 30, avg_payment_delay: 0, std_payment_delay: 0,
+            avg_days_to_clear: 30, avg_invoice_amount: 0, transaction_count: 0, 
+            late_payment_ratio: 0.0, company_name: cleanName, cust_number: finalCustNumber
           };
-
           await setDoc(doc(db, "company_features", finalCustNumber), default_company);
-          console.log("Created new company profile for:", cleanName);
       }
 
-      // --- CALCULATE SLA FIELDS ---
-      // 1. Get days based on risk logic
       const calculatedSlaDays = deriveSlaDays(currentLateRatio);
-
-      // 2. Calculate SLA Date (Today + SLA Days)
       const slaDateObj = new Date();
       slaDateObj.setDate(slaDateObj.getDate() + calculatedSlaDays);
       const slaDateString = slaDateObj.toISOString().split('T')[0];
 
-      // 3. CREATE THE CASE
       await addDoc(collection(db, "cases"), {
-        // --- Core User Input ---
         invoice_id: formData.invoice_id,
         name_customer: cleanName,
         cust_number: finalCustNumber,
         total_open_amount: Number(formData.amount),
         due_date: formData.due_date,
         document_create_date: new Date().toISOString().split('T')[0],
-
-        // --- Required Feature Fields ---
         predicted_delay: 0.0,
-        predicted_payment_date: formData.due_date,
-        
-        // Updated Logic here:
+        predicted_payment_date: null,
         sla_days: parseInt(calculatedSlaDays),
         sla_date: slaDateString, 
-        
         zone: "GREEN",
         action: "NO_ACTION",
         escalated: false,
-        
         late_payment_ratio: Number(currentLateRatio),
-        
         last_predicted_at: serverTimestamp(),
         is_open_flag: true
       });
@@ -157,20 +163,34 @@ const AddCaseModal = ({ onClose }) => {
 
           <div style={styles.row}>
             <label style={styles.label}>Customer Name</label>
-            <input 
-              required 
-              list="company-list"
-              style={styles.input}
-              value={formData.customer_name}
-              onChange={e => setFormData({...formData, customer_name: e.target.value})}
-              placeholder="Start typing to search..."
-              autoComplete="off"
-            />
-            <datalist id="company-list">
-                {existingCompanies.map((c) => (
-                    <option key={c.id} value={c.name} />
-                ))}
-            </datalist>
+            
+            {/* --- CUSTOM DROPDOWN WRAPPER --- */}
+            <div style={{ position: "relative" }} ref={wrapperRef}>
+                <input 
+                  required 
+                  style={styles.input}
+                  value={formData.customer_name}
+                  onChange={handleNameChange}
+                  onFocus={() => setShowSuggestions(true)}
+                  placeholder="Start typing to search..."
+                  autoComplete="off"
+                />
+                
+                {/* --- CUSTOM DROPDOWN LIST --- */}
+                {showSuggestions && filteredCompanies.length > 0 && (
+                    <ul style={styles.dropdownList}>
+                        {filteredCompanies.map((c) => (
+                            <li 
+                                key={c.id} 
+                                onClick={() => selectCompany(c.name)}
+                                style={styles.dropdownItem}
+                            >
+                                {c.name}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
           </div>
 
           <div style={styles.grid}>
@@ -217,10 +237,35 @@ const styles = {
   row: { display: "flex", flexDirection: "column", gap: "6px" },
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" },
   label: { fontSize: "13px", fontWeight: "600", color: "#475569" },
-  input: { padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "14px" },
+  input: { padding: "10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "14px", width: "100%", boxSizing: 'border-box' }, // Added boxSizing
   actions: { display: "flex", gap: "12px", marginTop: "10px" },
   cancelBtn: { flex: 1, padding: "10px", background: "none", border: "1px solid #cbd5e1", borderRadius: "6px", cursor: "pointer", fontWeight: "600" },
-  submitBtn: { flex: 1, padding: "10px", background: "#2563eb", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600" }
+  submitBtn: { flex: 1, padding: "10px", background: "#2563eb", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600" },
+  
+  // --- NEW STYLES FOR DROPDOWN ---
+  dropdownList: {
+    position: "absolute",
+    top: "100%", // Pushes it directly below input
+    left: 0,
+    right: 0,
+    background: "white",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    maxHeight: "150px",
+    overflowY: "auto",
+    zIndex: 10,
+    listStyle: "none",
+    padding: 0,
+    margin: "4px 0 0 0",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+  },
+  dropdownItem: {
+    padding: "8px 12px",
+    cursor: "pointer",
+    fontSize: "14px",
+    color: "#334155",
+    borderBottom: "1px solid #f1f5f9"
+  }
 };
 
 export default AddCaseModal;
