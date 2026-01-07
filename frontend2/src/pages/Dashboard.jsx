@@ -11,12 +11,14 @@ import ZoneSummary from "../components/ZoneSummary.jsx";
 import SlaBreachList from "../components/SlaBreachList.jsx";
 import CallsOverview from "../components/CallsOverview.jsx";
 import CashForecast from "../components/CashForecast.jsx"; // <--- Add this
+import AddCaseModal from "../components/AddCaseModal.jsx";
 
 const Dashboard = () => {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [zoneFilter, setZoneFilter] = useState("ALL");
+const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     // 1. QUERY: We order by 'last_predicted_at' because that is the field 
@@ -90,8 +92,26 @@ const Dashboard = () => {
 
   return (
     <div style={{ padding: 40, background: "#f8f9fa", minHeight: "100vh" }}>
-      <h1 style={{ marginBottom: 24 }}>DCA Dashboard ({cases.length} active cases)</h1>
-
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h1 style={{ margin: 0 }}>DCA Dashboard ({cases.length} active cases)</h1>
+        
+        <button 
+          onClick={() => setShowAddModal(true)}
+          style={{
+            background: "#2563eb", 
+            color: "white", 
+            border: "none", 
+            padding: "10px 20px", 
+            borderRadius: "8px", 
+            cursor: "pointer", 
+            fontWeight: "bold",
+            display: "flex", alignItems: "center", gap: "8px",
+            boxShadow: "0 2px 5px rgba(37, 99, 235, 0.3)"
+          }}
+        >
+          + New Case
+        </button>
+      </div>
       <ZoneSummary cases={cases} />
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
@@ -129,6 +149,9 @@ const Dashboard = () => {
           <CallsOverview cases={callActionCases} />
         </div>
       </div>
+      {showAddModal && (
+        <AddCaseModal onClose={() => setShowAddModal(false)} />
+      )}
     </div>
   );
 };
