@@ -54,15 +54,18 @@ def safe_to_datetime(series, fmt=None):
         return pd.to_datetime(series, format=fmt, errors="coerce")
     return pd.to_datetime(series, errors="coerce")
 
-def assign_zone(pred_delay, sla_days):
-    if pred_delay is None or (isinstance(pred_delay, float) and math.isnan(pred_delay)):
-        return "UNKNOWN"
-    if pred_delay <= 0:
-        return "GREEN"
-    elif pred_delay <= sla_days:
-        return "YELLOW"
+def assign_zone(pred_delay, sla_days, sla_date):
+    if (sla_date is not None) and (pd.Timestamp.today().normalize() > sla_date):
+        return "RED"
     else:
-        return "ORANGE"
+        if pred_delay is None or (isinstance(pred_delay, float) and math.isnan(pred_delay)):
+            return "UNKNOWN"
+        if pred_delay <= 0:
+            return "GREEN"
+        elif pred_delay <= sla_days:
+            return "YELLOW"
+        else:
+            return "ORANGE"
 
 def derive_sla_days(late_ratio):
     try:
@@ -268,13 +271,6 @@ def run_ml_job():
         late_ratio = float(row.get("late_payment_ratio", 0) or 0)
         sla_days = derive_sla_days(late_ratio)
         pred_delay = float(row.get("predicted_delay", 0) or 0)
-        zone = assign_zone(pred_delay, sla_days)
-
-        if zone == "GREEN": action = "NO_ACTION"
-        elif zone == "YELLOW": action = "MAIL"
-        else: action = "CALL"
-
-        escalated = False
         try:
             if pd.notna(row["due_date"]):
                 sla_date = row["due_date"] + timedelta(days=sla_days)
@@ -283,6 +279,15 @@ def run_ml_job():
                 sla_date = None
         except Exception:
             sla_date = None
+        zone = assign_zone(pred_delay, sla_days,sla_date)
+
+        if zone == "GREEN": action = "NO_ACTION"
+        elif zone == "YELLOW": action = "MAIL"
+        elif zone == "RED": action = "ESCALATE"
+        else: action = "CALL"
+
+        escalated = False
+        
 
         update_payload = {
             "predicted_delay": float(pred_delay),
