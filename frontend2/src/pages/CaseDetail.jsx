@@ -307,7 +307,7 @@ FedEx Accounts Receivable`;
                     <div style={styles.trustBarBg}>
                         <div style={{
                             ...styles.trustBarFill, 
-                            width: `${Math.max(0, 100 - (caseData.late_payment_ratio * 100))}%`,
+                            width: `${Math.max(2, 100 - (caseData.late_payment_ratio * 100))}%`,
                             backgroundColor: caseData.late_payment_ratio > 0.5 ? '#ef4444' : '#10b981'
                         }}></div>
                     </div>
