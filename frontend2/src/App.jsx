@@ -5,6 +5,7 @@ import CaseDetail from "./pages/CaseDetail.jsx";
 import CustomerProfile from "./pages/CustomerProfile"; // Import new page
 import Navbar from "./components/Navbar";
 import CustomerSearch from "./pages/CustomerSearch";
+import SearchCase from "./pages/SearchCase";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/case/:id" element={<CaseDetail />} />
         <Route path="/customer/:customerId" element={<CustomerProfile />} />
         <Route path="/customers" element={<CustomerSearch />} />
+        <Route path="/search" element={<SearchCase />} />
       </Routes>
     </BrowserRouter>
   );

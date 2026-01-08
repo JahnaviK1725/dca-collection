@@ -49,12 +49,7 @@ const CaseDetail = () => {
   // ✨ NEW STATE FOR AI EMAIL ✨
   const [showEmail, setShowEmail] = useState(false);
 
-  // Mock Call History
-  const historyLogs = [
-    { id: 1, date: '2026-01-05', action: 'Call (Outbound)', outcome: 'No Answer', note: 'Left voicemail with finance dept.', status: 'Open' },
-    { id: 2, date: '2025-12-28', action: 'Email', outcome: 'Sent', note: 'Automated breach warning sent.', status: 'Delivered' },
-    { id: 3, date: '2025-12-15', action: 'Call (Outbound)', outcome: 'Promise to Pay', note: 'Spoke to Sarah. She promised to clear by Jan 6th.', status: 'PTP: Jan 6' },
-  ];
+
 
   useEffect(() => {
     const fetchCase = async () => {
@@ -342,27 +337,61 @@ FedEx Accounts Receivable`;
                     <button style={styles.addBtn}>+ Log Call</button>
                 </div>
                 <div style={styles.logList}>
-                    {historyLogs.map((log) => (
-                        <div key={log.id} style={styles.logItem}>
+                    {/* 👇 CHANGED: Read from Firestore data & Sort Newest First */}
+                    {(caseData.history_logs || [])
+                        .sort((a, b) => new Date(b.date) - new Date(a.date)) 
+                        .map((log, index) => (
+                        <div key={index} style={styles.logItem}>
                             <div style={styles.logDateBox}>
-                                <span style={styles.logMonth}>{new Date(log.date).toLocaleDateString('en-US',{month:'short'})}</span>
-                                <span style={styles.logDay}>{new Date(log.date).getDate()}</span>
+                                <span style={styles.logMonth}>
+                                    {new Date(log.date).toLocaleDateString('en-US',{month:'short'})}
+                                </span>
+                                <span style={styles.logDay}>
+                                    {new Date(log.date).getDate()}
+                                </span>
                             </div>
                             <div style={styles.logContent}>
                                 <div style={styles.logHeader}>
-                                    <span style={styles.logAction}>{log.action}</span>
+                                    <span style={{
+                                        fontSize: '14px', 
+                                        fontWeight: '600',
+                                        // 🤖 Purple Text for AI
+                                        color: log.action.includes("AI") ? '#7c3aed' : '#111827' 
+                                    }}>
+                                        {/* 🤖 Robot Icon for AI */}
+                                        {log.action.includes("AI") ? "⚡ " : ""} 
+                                        {log.action}
+                                    </span>
+                                    
                                     <span style={{
                                         ...styles.statusBadge, 
-                                        backgroundColor: log.outcome === 'Promise to Pay' ? '#dcfce7' : '#f3f4f6',
-                                        color: log.outcome === 'Promise to Pay' ? '#166534' : '#4b5563'
+                                        // 🤖 Purple Badge for AI
+                                        backgroundColor: log.action.includes("AI") ? '#f3e8ff' : '#f3f4f6',
+                                        color: log.action.includes("AI") ? '#7e22ce' : '#4b5563',
+                                        border: log.action.includes("AI") ? '1px solid #d8b4fe' : 'none'
                                     }}>
-                                        {log.outcome}
+                                        {log.status || log.outcome}
                                     </span>
                                 </div>
-                                <div style={styles.logNote}>"{log.note}"</div>
+                                {/* 🤖 Monospace Font for System Notes */}
+                                <div style={{
+                                    ...styles.logNote,
+                                    fontFamily: log.action.includes("AI") ? 'monospace' : 'inherit',
+                                    fontSize: log.action.includes("AI") ? '12px' : '13px',
+                                    color: log.action.includes("AI") ? '#475569' : '#4b5563'
+                                }}>
+                                    "{log.note}"
+                                </div>
                             </div>
                         </div>
                     ))}
+                    
+                    {/* Fallback if no logs exist */}
+                    {(!caseData.history_logs || caseData.history_logs.length === 0) && (
+                        <div style={{color: '#94a3b8', fontStyle: 'italic', fontSize: '13px', textAlign: 'center', padding: '10px'}}>
+                            No activity recorded yet.
+                        </div>
+                    )}
                 </div>
             </div>
 

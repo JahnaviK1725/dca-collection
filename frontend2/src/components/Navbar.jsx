@@ -16,6 +16,7 @@ const Navbar = () => {
         <Link to="/customers" style={styles.link}>Customers</Link>
         {/* ------------------- */}
         
+        <Link to="/search" style={styles.link}>Search Case</Link>
         <div style={styles.divider}>|</div>
         <span style={styles.user}>Admin View</span>
       </div>

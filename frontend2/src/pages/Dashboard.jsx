@@ -75,6 +75,7 @@ const Dashboard = () => {
 
   // 2. RESET PAGE ON FILTER CHANGE
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [zoneFilter]);
 
