@@ -55,7 +55,8 @@ const Dashboard = () => {
             zone: d.zone || "UNKNOWN",
             action: d.action || "NO_ACTION",
             escalated: Boolean(d.escalated),
-            last_predicted_at: d.last_predicted_at
+            last_predicted_at: d.last_predicted_at,
+            total_open_amount: d.total_open_amount,
           });
         });
 
