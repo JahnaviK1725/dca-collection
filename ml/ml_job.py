@@ -286,7 +286,6 @@ def run_ml_job():
         elif zone == "RED": action = "ESCALATE"
         else: action = "CALL"
 
-        escalated = False
         
 
         update_payload = {

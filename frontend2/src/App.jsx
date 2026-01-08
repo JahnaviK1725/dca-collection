@@ -6,6 +6,7 @@ import CustomerProfile from "./pages/CustomerProfile"; // Import new page
 import Navbar from "./components/Navbar";
 import CustomerSearch from "./pages/CustomerSearch";
 import SearchCase from "./pages/SearchCase";
+import AiLogs from "./pages/AiLogs.jsx";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
         <Route path="/customer/:customerId" element={<CustomerProfile />} />
         <Route path="/customers" element={<CustomerSearch />} />
         <Route path="/search" element={<SearchCase />} />
+        <Route path="/ai-logs" element={<AiLogs />} />
       </Routes>
     </BrowserRouter>
   );
