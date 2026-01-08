@@ -22,7 +22,7 @@ const SearchCase = () => {
             invoice_id: d.invoice_id || d.doc_id || doc.id,
             customer: d.company_name || d.name_customer || "Unknown",
             amount: Number(d.total_open_amount || d.invoice_amount || 0),
-            status: d.is_open_flag ? "Open" : "Closed",
+            status: d.isOpen == 1 ? "Open" : "Closed",
             zone: d.zone || "UNKNOWN"
           });
         });
