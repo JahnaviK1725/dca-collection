@@ -29,7 +29,7 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 
 # 3. Model Selection
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemma-3-12b-it"
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
