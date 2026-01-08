@@ -10,7 +10,7 @@ const Navbar = () => {
         </Link>
       </div>
       <div style={styles.links}>
-        <Link to="/" style={styles.link}>
+        <Link to="/dashboard" style={styles.link}>
           Dashboard
         </Link>
 

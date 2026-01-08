@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase.js";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 const SearchCase = () => {
   const [cases, setCases] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  
+  // --- PAGINATION STATE ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10; // Change this to show more rows
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,11 +42,26 @@ const SearchCase = () => {
     fetchCases();
   }, []);
 
-  // Filter Logic
+  // 1. FILTER Logic (Search)
   const filtered = cases.filter(c => 
     String(c.invoice_id).toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(c.customer).toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // 2. PAGINATION Logic (Slice the filtered list)
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filtered.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+
+  // Handle Page Change
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+
+  // Reset to Page 1 when searching
+  const handleSearch = (e) => {
+      setSearchTerm(e.target.value);
+      setCurrentPage(1);
+  };
 
   return (
     <div style={styles.page}>
@@ -56,7 +76,7 @@ const SearchCase = () => {
           type="text" 
           placeholder="Type Invoice ID (e.g., 2960...) or Customer Name..." 
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={handleSearch}
           style={styles.searchInput}
           autoFocus
         />
@@ -68,11 +88,13 @@ const SearchCase = () => {
            <div style={{textAlign: 'center', padding: 20}}>Loading invoices...</div>
         ) : (
            <>
-             <div style={styles.countText}>Found {filtered.length} matches</div>
+             <div style={styles.countText}>
+                Showing {indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filtered.length)} of {filtered.length} matches
+             </div>
              
              <table style={styles.table}>
                 <thead>
-                    <tr style={{textAlign: 'left', color: '#64748b', fontSize: '13px'}}>
+                    <tr style={{textAlign: 'left', color: '#64748b', fontSize: '13px', background: '#f8fafc'}}>
                         <th style={{padding: '12px'}}>Invoice ID</th>
                         <th style={{padding: '12px'}}>Customer</th>
                         <th style={{padding: '12px'}}>Amount</th>
@@ -82,7 +104,7 @@ const SearchCase = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {filtered.map(c => (
+                    {currentItems.map(c => (
                         <tr key={c.id} style={styles.row}>
                             <td style={styles.td}><strong>#{c.invoice_id}</strong></td>
                             <td style={styles.td}>{c.customer}</td>
@@ -110,8 +132,40 @@ const SearchCase = () => {
                             </td>
                         </tr>
                     ))}
+                    {currentItems.length === 0 && (
+                        <tr>
+                            <td colSpan="6" style={{padding: '20px', textAlign: 'center', color: '#94a3b8'}}>
+                                No invoices found matching "{searchTerm}"
+                            </td>
+                        </tr>
+                    )}
                 </tbody>
              </table>
+
+             {/* PAGINATION CONTROLS */}
+             {filtered.length > itemsPerPage && (
+                <div style={styles.pagination}>
+                    <button 
+                        onClick={() => paginate(currentPage - 1)} 
+                        disabled={currentPage === 1}
+                        style={{...styles.pageBtn, opacity: currentPage === 1 ? 0.5 : 1}}
+                    >
+                        Previous
+                    </button>
+                    
+                    <span style={styles.pageInfo}>
+                        Page {currentPage} of {totalPages}
+                    </span>
+                    
+                    <button 
+                        onClick={() => paginate(currentPage + 1)} 
+                        disabled={currentPage === totalPages}
+                        style={{...styles.pageBtn, opacity: currentPage === totalPages ? 0.5 : 1}}
+                    >
+                        Next
+                    </button>
+                </div>
+             )}
            </>
         )}
       </div>
@@ -120,15 +174,21 @@ const SearchCase = () => {
 };
 
 const styles = {
-  page: { maxWidth: "1000px", margin: "0 auto", padding: "40px 20px" },
+  page: { width: "100%", padding: "40px 20px", boxSizing: "border-box", minHeight: "100vh" },
   header: { textAlign: "center", marginBottom: "30px" },
-  searchContainer: { display: "flex", justifyContent: "center", marginBottom: "40px" },
-  searchInput: { width: "100%", maxWidth: "600px", padding: "16px", fontSize: "18px", borderRadius: "30px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)", outline: "none" },
-  countText: { marginBottom: "10px", color: "#64748b", fontWeight: "600", fontSize: '14px' },
+  searchContainer: { display: "flex", justifyContent: "center", marginBottom: "30px" },
+  searchInput: { width: "100%", maxWidth: "600px", padding: "16px", fontSize: "16px", borderRadius: "30px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)", outline: "none" },
+  countText: { marginBottom: "10px", color: "#64748b", fontWeight: "600", fontSize: '13px', textAlign: 'right' },
+  
   table: { width: "100%", borderCollapse: "collapse", background: "white", borderRadius: "8px", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
   row: { borderBottom: "1px solid #f1f5f9" },
   td: { padding: "14px 12px", fontSize: "14px", color: "#334155" },
-  btn: { background: "none", border: "1px solid #cbd5e1", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontSize: "12px", fontWeight: "600", color: "#475569" }
+  btn: { background: "none", border: "1px solid #cbd5e1", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontSize: "12px", fontWeight: "600", color: "#475569" },
+
+  // Pagination Styles
+  pagination: { display: "flex", justifyContent: "center", alignItems: "center", gap: "15px", marginTop: "25px" },
+  pageBtn: { padding: "8px 16px", border: "1px solid #cbd5e1", background: "white", borderRadius: "6px", cursor: "pointer", fontWeight: "600", color: "#475569" },
+  pageInfo: { fontSize: "14px", color: "#64748b", fontWeight: "500" }
 };
 
 export default SearchCase;

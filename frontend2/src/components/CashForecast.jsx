@@ -14,7 +14,7 @@ const CashForecast = ({ cases }) => {
   cases.forEach(c => {
     // Only look at OPEN cases that have a valid prediction
     // We check for 'is_open_flag' or fallback logic (amount > 0)
-    const isOpen = c.is_open_flag !== false && c.outstanding_amount > 0;
+    const isOpen = c.isOpen !== '0' && c.outstanding_amount > 0;
     
     if (isOpen && c.predicted_payment_date && c.predicted_payment_date !== "—") {
       const pDate = new Date(c.predicted_payment_date);

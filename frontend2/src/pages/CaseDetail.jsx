@@ -71,6 +71,7 @@ const CaseDetail = () => {
     setClosing(true);
     const ref = doc(db, "cases", id);
     updateDoc(ref, {
+        isOpen: '0',
         is_open_flag: false,
         zone: 'GREEN',
         action: 'NO_ACTION',

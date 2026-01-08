@@ -128,7 +128,8 @@ const AddCaseModal = ({ onClose }) => {
         escalated: false,
         late_payment_ratio: Number(currentLateRatio),
         last_predicted_at: serverTimestamp(),
-        is_open_flag: true
+        is_open_flag: true,
+        isOpen: '1'
       });
 
       alert(`Success! Added invoice for ${cleanName}`);
