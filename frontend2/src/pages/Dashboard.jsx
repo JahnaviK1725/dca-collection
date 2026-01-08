@@ -6,7 +6,6 @@ import {
   orderBy
 } from "firebase/firestore";
 import { db } from "../firebase.js";
-import DashboardCharts from "../components/DashboardCharts";
 import CaseTable from "../components/CaseTable.jsx";
 import ZoneSummary from "../components/ZoneSummary.jsx";
 import SlaBreachList from "../components/SlaBreachList.jsx";
@@ -122,7 +121,6 @@ const Dashboard = () => {
           + New Case
         </button>
       </div>
-      <DashboardCharts />
       <ZoneSummary cases={cases} />
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>

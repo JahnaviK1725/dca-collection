@@ -13,7 +13,9 @@ const Navbar = () => {
         <Link to="/dashboard" style={styles.link}>
           Dashboard
         </Link>
-
+        <Link to="/analytics" style={styles.link}>
+          📊 Analytics
+        </Link>
         {/* --- NEW LINK HERE --- */}
         <Link to="/customers" style={styles.link}>
           Customers

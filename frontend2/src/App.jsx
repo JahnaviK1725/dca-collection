@@ -7,6 +7,7 @@ import Navbar from "./components/Navbar";
 import CustomerSearch from "./pages/CustomerSearch";
 import SearchCase from "./pages/SearchCase";
 import AiLogs from "./pages/AiLogs.jsx";
+import Analytics from "./pages/Analytics";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/customers" element={<CustomerSearch />} />
         <Route path="/search" element={<SearchCase />} />
         <Route path="/ai-logs" element={<AiLogs />} />
+        <Route path="/analytics" element={<Analytics />} />
       </Routes>
     </BrowserRouter>
   );
