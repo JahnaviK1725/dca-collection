@@ -5,7 +5,7 @@ while true; do
 
     # 1. Run the ML Job (Updates Zones)
     echo "running ML Job..."
-    # python3 ml_job.py
+    python3 ml_job.py
 
     # 2. Run the Automation Agent (Acts on Zones)
     echo "running AI Agent..."

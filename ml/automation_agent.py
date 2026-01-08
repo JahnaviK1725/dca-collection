@@ -203,8 +203,8 @@ def run_automation():
             })
             
             # SLOW DOWN to prevent 429 Errors
-            print("   zzz... Cooling down for 10s...")
-            time.sleep(10) 
+            print("   zzz... Cooling down for 5s...")
+            time.sleep(5) 
 
     # --- 2. Orange Zone (Calls) ---
     print("\n--- Processing Orange Zone (Calls) ---")
