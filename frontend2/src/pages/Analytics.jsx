@@ -3,7 +3,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase.js";
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, ReferenceLine
+  BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from "recharts";
 
 const Analytics = () => {
@@ -25,16 +25,18 @@ const Analytics = () => {
         
         // Init Counters
         const riskCounts = { GREEN: 0, YELLOW: 0, ORANGE: 0, RED: 0 };
-        const forecastMap = { "Week 1": 0, "Week 2": 0, "Week 3": 0, "Future": 0 };
+        const forecastMap = { "Overdue": 0, "Week 1": 0, "Week 2": 0, "Week 3": 0, "Future": 0 };
         const agingMap = { "Current": 0, "1-30 Days": 0, "31-60 Days": 0, "60+ Days": 0 };
         const debtorMap = {};
         let totalSum = 0;
         let recoverableSum = 0;
 
         const today = new Date();
-        const next7 = new Date(); next7.setDate(today.getDate() + 7);
-        const next14 = new Date(); next14.setDate(today.getDate() + 14);
-        const next21 = new Date(); next21.setDate(today.getDate() + 21);
+        today.setHours(0,0,0,0);
+        
+        const next7 = new Date(today); next7.setDate(today.getDate() + 7);
+        const next14 = new Date(today); next14.setDate(today.getDate() + 14);
+        const next21 = new Date(today); next21.setDate(today.getDate() + 21);
 
         snapshot.forEach(doc => {
           const d = doc.data();
@@ -45,15 +47,19 @@ const Analytics = () => {
           const zone = d.zone || "GREEN";
           if (riskCounts[zone] !== undefined) riskCounts[zone]++;
 
-          // 2. CASH FORECAST (Using ML Predicted Date)
+          // 2. CASH FORECAST
           if (d.predicted_payment_date) {
             const predDate = new Date(d.predicted_payment_date);
-            if (predDate <= next7) forecastMap["Week 1"] += amount;
+            
+            // We still track 'Overdue' for logic, but we won't graph it
+            if (predDate < today) {
+                forecastMap["Overdue"] = (forecastMap["Overdue"] || 0) + amount;
+            } 
+            else if (predDate <= next7) forecastMap["Week 1"] += amount;
             else if (predDate <= next14) forecastMap["Week 2"] += amount;
             else if (predDate <= next21) forecastMap["Week 3"] += amount;
             else forecastMap["Future"] += amount;
             
-            // Only count "recoverable" if predicted delay is reasonable (< 90 days)
             if ((d.predicted_delay || 0) < 90) recoverableSum += amount;
           } else {
              forecastMap["Future"] += amount;
@@ -74,7 +80,7 @@ const Analytics = () => {
           debtorMap[name] += amount;
         });
 
-        // --- FORMATTING DATA FOR RECHARTS ---
+        // --- FORMATTING DATA ---
 
         // Pie Data
         const riskData = [
@@ -84,10 +90,13 @@ const Analytics = () => {
           { name: "Critical (Red)", value: riskCounts.RED, color: "#ef4444" },
         ].filter(d => d.value > 0);
 
-        // Forecast Data
-        const forecastData = Object.keys(forecastMap).map(k => ({
-            name: k, amount: forecastMap[k]
-        }));
+        // Forecast Data (EXPLICITLY EXCLUDING OVERDUE)
+        const forecastData = [
+            { name: "Week 1", amount: forecastMap["Week 1"] },
+            { name: "Week 2", amount: forecastMap["Week 2"] },
+            { name: "Week 3", amount: forecastMap["Week 3"] },
+            { name: "Future", amount: forecastMap["Future"] }
+        ];
 
         // Aging Data
         const agingData = Object.keys(agingMap).map(k => ({
@@ -130,7 +139,7 @@ const Analytics = () => {
         <div style={styles.kpiCard}>
             <div style={styles.kpiLabel}>Critical Cases (Red/Orange)</div>
             <div style={{...styles.kpiValue, color: '#ef4444'}}>
-                {stats.riskData.find(x=>x.name.includes("Critical"))?.value || 0 + stats.riskData.find(x=>x.name.includes("Priority"))?.value || 0}
+                { (stats.riskData.find(x=>x.name.includes("Critical"))?.value || 0) + (stats.riskData.find(x=>x.name.includes("Priority"))?.value || 0) }
             </div>
         </div>
       </div>
@@ -155,14 +164,20 @@ const Analytics = () => {
 
         {/* CHART 2: CASH FORECAST (BAR) */}
         <div style={styles.card}>
-            <h3 style={styles.cardTitle}>🔮 ML Cash Forecast (Next 4 Weeks)</h3>
+            <h3 style={styles.cardTitle}>🔮 ML Cash Forecast (Incoming)</h3>
             <div style={{ width: "100%", height: 300 }}>
                 <ResponsiveContainer>
                     <BarChart data={stats.forecastData} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tick={{fontSize: 12}} />
-                        <YAxis tickFormatter={(val)=>`$${val/1000}k`} tick={{fontSize: 12}} />
+                        
+                        <YAxis 
+                            tickFormatter={(val) => val === 0 ? '$0' : `$${(val / 1000000).toFixed(1)}M`} 
+                            tick={{fontSize: 12}} 
+                        />
+                        
                         <Tooltip formatter={(value) => `$${value.toLocaleString()}`} cursor={{fill: '#f1f5f9'}} />
+                        
                         <Bar dataKey="amount" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />
                     </BarChart>
                 </ResponsiveContainer>
@@ -177,7 +192,12 @@ const Analytics = () => {
                     <BarChart data={stats.agingData} margin={{top: 20, right: 30, left: 20, bottom: 5}}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" tick={{fontSize: 12}} />
-                        <YAxis tickFormatter={(val)=>`$${val/1000}k`} tick={{fontSize: 12}} />
+                        
+                        <YAxis 
+                            tickFormatter={(val) => val === 0 ? '$0' : `$${(val / 1000000).toFixed(1)}M`} 
+                            tick={{fontSize: 12}} 
+                        />
+                        
                         <Tooltip formatter={(value) => `$${value.toLocaleString()}`} cursor={{fill: '#f1f5f9'}} />
                         <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
                     </BarChart>
