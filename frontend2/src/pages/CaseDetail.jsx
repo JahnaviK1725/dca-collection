@@ -1,5 +1,5 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { doc, getDoc, updateDoc, serverTimestamp, deleteField } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp, deleteField, onSnapshot } from "firebase/firestore"; // <--- ADD onSnapshot
 import { db } from "../firebase.js";
 import { useEffect, useState } from "react";
 
@@ -33,7 +33,6 @@ const formatDate = (dateVal) => {
       return dateObj.toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' });
     }
     return "Invalid Format";
-  // eslint-disable-next-line no-unused-vars
   } catch (e) {
     return "Error";
   }
@@ -49,21 +48,27 @@ const CaseDetail = () => {
   // ✨ NEW STATE FOR AI EMAIL ✨
   const [showEmail, setShowEmail] = useState(false);
 
-
-
+  // --- UPDATED: REAL-TIME LISTENER ---
   useEffect(() => {
-    const fetchCase = async () => {
-      try {
-        const ref = doc(db, "cases", id);
-        const snap = await getDoc(ref);
-        if (snap.exists()) setCaseData(snap.data());
-      } catch (err) {
-        console.error("Error fetching case:", err);
-      } finally {
+    setLoading(true);
+    const caseRef = doc(db, "cases", id);
+
+    // onSnapshot creates a live connection.
+    // Whenever the doc changes (e.g. AI adds a log), this runs again.
+    const unsubscribe = onSnapshot(caseRef, (docSnap) => {
+        if (docSnap.exists()) {
+            setCaseData(docSnap.data());
+        } else {
+            console.log("No such document!");
+        }
         setLoading(false);
-      }
-    };
-    fetchCase();
+    }, (error) => {
+        console.error("Error listening to case:", error);
+        setLoading(false);
+    });
+
+    // Clean up the listener when the user leaves the page
+    return () => unsubscribe();
   }, [id]);
 
   const handleCloseCase = async () => {
@@ -193,7 +198,7 @@ FedEx Accounts Receivable`;
             <h3 style={styles.cardTitle}>🎯 Next Best Action</h3>
             <div style={styles.actionContainer}>
                 
-                {/* CALL ACTION (Orange/Red) */}
+                {/* CALL ACTION */}
                 {caseData.action === 'CALL' && (
                    <div style={styles.actionRow}>
                         <div style={styles.actionIcon}>📞</div>
@@ -204,7 +209,7 @@ FedEx Accounts Receivable`;
                    </div>
                 )}
 
-                {/* ✨ MAIL ACTION WITH AI DRAFTER (Yellow) ✨ */}
+                {/* MAIL ACTION */}
                 {caseData.action === 'MAIL' && (
                    <div style={styles.actionRow}>
                         <div style={styles.actionIcon}>✉️</div>
@@ -217,7 +222,7 @@ FedEx Accounts Receivable`;
                                 onClick={() => setShowEmail(!showEmail)}
                                 style={{
                                     marginTop: '10px',
-                                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', // Purple Gradient
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
                                     color: 'white', border: 'none', 
                                     padding: '8px 16px', borderRadius: '20px', cursor: 'pointer',
                                     fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
@@ -259,7 +264,7 @@ FedEx Accounts Receivable`;
                    </div>
                 )}
 
-                {/* NO ACTION (Green) */}
+                {/* NO ACTION */}
                 {caseData.action === 'NO_ACTION' && (
                    <div style={styles.actionRow}>
                         <div style={styles.actionIcon}>💤</div>
@@ -331,14 +336,13 @@ FedEx Accounts Receivable`;
                 </div>
             </div>
 
-            {/* 3. ACTIVITY LOG */}
+            {/* 3. ACTIVITY LOG (Live Updates) */}
             <div style={styles.card}>
                 <div style={styles.cardHeaderRow}>
                     <h3 style={styles.cardTitleNoBottom}>📜 Activity Log</h3>
                     <button style={styles.addBtn}>+ Log Call</button>
                 </div>
                 <div style={styles.logList}>
-                    {/* 👇 CHANGED: Read from Firestore data & Sort Newest First */}
                     {(caseData.history_logs || [])
                         .sort((a, b) => new Date(b.date) - new Date(a.date)) 
                         .map((log, index) => (
@@ -356,17 +360,14 @@ FedEx Accounts Receivable`;
                                     <span style={{
                                         fontSize: '14px', 
                                         fontWeight: '600',
-                                        // 🤖 Purple Text for AI
                                         color: log.action.includes("AI") ? '#7c3aed' : '#111827' 
                                     }}>
-                                        {/* 🤖 Robot Icon for AI */}
                                         {log.action.includes("AI") ? "⚡ " : ""} 
                                         {log.action}
                                     </span>
                                     
                                     <span style={{
                                         ...styles.statusBadge, 
-                                        // 🤖 Purple Badge for AI
                                         backgroundColor: log.action.includes("AI") ? '#f3e8ff' : '#f3f4f6',
                                         color: log.action.includes("AI") ? '#7e22ce' : '#4b5563',
                                         border: log.action.includes("AI") ? '1px solid #d8b4fe' : 'none'
@@ -374,7 +375,6 @@ FedEx Accounts Receivable`;
                                         {log.status || log.outcome}
                                     </span>
                                 </div>
-                                {/* 🤖 Monospace Font for System Notes */}
                                 <div style={{
                                     ...styles.logNote,
                                     fontFamily: log.action.includes("AI") ? 'monospace' : 'inherit',
@@ -387,7 +387,6 @@ FedEx Accounts Receivable`;
                         </div>
                     ))}
                     
-                    {/* Fallback if no logs exist */}
                     {(!caseData.history_logs || caseData.history_logs.length === 0) && (
                         <div style={{color: '#94a3b8', fontStyle: 'italic', fontSize: '13px', textAlign: 'center', padding: '10px'}}>
                             No activity recorded yet.
