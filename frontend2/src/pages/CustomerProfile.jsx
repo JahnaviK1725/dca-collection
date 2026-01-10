@@ -122,6 +122,57 @@ const CustomerProfile = () => {
           {/* 1. METRICS CARD */}
           <div style={styles.card}>
             <h3>🧬 Behavior Analysis (ML Derived)</h3>
+            
+            {/* --- SPECTRUM CHART AREA --- */}
+            <div style={styles.chartArea}>
+              <p style={styles.label}>Paying Habit Spectrum</p>
+
+              {/* The Spectrum Bar */}
+              <div
+                style={{
+                  ...styles.barBg,
+                  position: "relative", // Needed for the absolute pointer
+                  height: "10px", // slightly thicker for visibility
+                  background:
+                    "linear-gradient(to right, #10b981, #f59e0b, #ef4444)", // Green -> Yellow -> Red
+                  borderRadius: "5px",
+                  marginTop: "10px",
+                  marginBottom: "10px",
+                }}
+              >
+                {/* The Pointer */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${Math.min(100, Math.max(0, profile.late_payment_ratio * 100))}%`, // Clamp between 0-100%
+                    top: "50%", // Center vertically relative to bar
+                    transform: "translate(-50%, -50%)", // Center the pointer itself
+                    width: "16px",
+                    height: "16px",
+                    backgroundColor: "#fff",
+                    border: "4px solid #a11aa6ff", // Dark border to make it pop
+                    borderRadius: "50%", // Make it circular
+                    boxShadow: "0 2px 4px rgba(223, 22, 182, 0.2)",
+                    transition: "left 0.3s ease-in-out", // Smooth movement
+                  }}
+                ></div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12px",
+                  color: "#666",
+                  marginBottom: "20px" // Add some spacing below
+                }}
+              >
+                <span>Always On Time</span>
+                <span>Always Late</span>
+              </div>
+            </div>
+            {/* --- END SPECTRUM CHART AREA --- */}
+
             <div style={styles.metricRow}>
               <div style={styles.metric}>
                 <span style={styles.label}>Avg Delay</span>
@@ -240,10 +291,15 @@ const styles = {
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" },
   card: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)", border: "1px solid #e2e8f0" },
 
+  // Metrics Styles
   metricRow: { display: "flex", justifyContent: "space-between" },
   metric: { display: "flex", flexDirection: "column" },
   label: { fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: "600" },
   value: { fontSize: "24px", fontWeight: "bold", color: "#0f172a", marginTop: "4px" },
+
+  // Chart Styles (New)
+  chartArea: { marginBottom: "10px" },
+  barBg: { width: "100%", borderRadius: "6px" },
 
   // Strategy Console Styles
   stratLabel: { fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' },

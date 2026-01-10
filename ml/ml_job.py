@@ -54,18 +54,34 @@ def safe_to_datetime(series, fmt=None):
         return pd.to_datetime(series, format=fmt, errors="coerce")
     return pd.to_datetime(series, errors="coerce")
 
-def assign_zone(pred_delay, sla_days, sla_date):
-    if (sla_date is not None) and (pd.Timestamp.today().normalize() > sla_date):
+def assign_zone(pred_delay, sla_days, sla_date, today=None):
+    if today is None:
+        today = pd.Timestamp.today().normalize()
+
+    # 1. Hard SLA breach
+    if sla_date is not None and today > sla_date:
         return "RED"
+
+    # 2. Missing prediction
+    if pred_delay is None or pd.isna(pred_delay):
+        return "UNKNOWN"
+
+    # 3. No predicted delay
+    if pred_delay <= 0:
+        return "GREEN"
+
+    # 4. If SLA date is unknown, fall back to delay-only logic
+    if sla_date is None:
+        return "ORANGE"
+
+    days_left = (sla_date - today).days
+    predicted_delay = math.ceil(pred_delay)
+
+    # 5. Risk zones
+    if predicted_delay < days_left:
+        return "YELLOW"   # delay but recoverable
     else:
-        if pred_delay is None or (isinstance(pred_delay, float) and math.isnan(pred_delay)):
-            return "UNKNOWN"
-        if pred_delay <= 0:
-            return "GREEN"
-        elif pred_delay <= sla_days:
-            return "YELLOW"
-        else:
-            return "ORANGE"
+        return "ORANGE"   # likely breach
 
 def derive_sla_days(late_ratio):
     try:

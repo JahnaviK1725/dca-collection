@@ -208,7 +208,16 @@ FedEx Accounts Receivable`;
                         </div>
                    </div>
                 )}
-
+                {/* ESCALATE ACTION */}
+                {caseData.action === 'ESCALATE' && (
+                     <div style={styles.actionRow}>
+                        <div style={styles.actionIcon}>⚠️</div>
+                        <div>
+                            <strong>Escalate to Supervisor</strong>
+                            <p style={styles.actionSub}>Notify your lawyer about the SLA breach.</p>
+                        </div>
+                   </div>
+                )}
                 {/* MAIL ACTION */}
                 {caseData.action === 'MAIL' && (
                    <div style={styles.actionRow}>
