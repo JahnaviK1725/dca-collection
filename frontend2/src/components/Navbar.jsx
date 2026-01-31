@@ -13,6 +13,10 @@ const Navbar = () => {
         <Link to="/dashboard" style={styles.link}>
           Dashboard
         </Link>
+        <Link to="/escalation" style={{ ...styles.link, color: "#f87171" }}>
+          🚨 Escalations
+        </Link>
+        
         <Link to="/analytics" style={styles.link}>
           📊 Analytics
         </Link>

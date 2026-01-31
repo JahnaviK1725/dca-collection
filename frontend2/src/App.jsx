@@ -10,6 +10,7 @@ import AiLogs from "./pages/AiLogs.jsx";
 import Analytics from "./pages/Analytics";
 import PaymentPortal from "./pages/PaymentPortal";
 import AiBot from "./components/AiBot";
+import EscalationPage from './pages/EscalationPage';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
         <Route path="/ai-logs" element={<AiLogs />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/pay/:id" element={<PaymentPortal />} />
+        <Route path="/escalation" element={<EscalationPage />} />
       </Routes>
    
        <AiBot />
