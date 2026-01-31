@@ -3,7 +3,8 @@ import {
   collection,
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  limit
 } from "firebase/firestore";
 import { db } from "../firebase.js";
 import CaseTable from "../components/CaseTable.jsx";
@@ -30,7 +31,9 @@ const Dashboard = () => {
     // 1. QUERY: Fetch all to ensure Summary Widgets have accurate totals
     const q = query(
       collection(db, "cases"),
-      orderBy("last_predicted_at", "desc")
+      orderBy("last_predicted_at", "desc"),
+      
+      limit(100)
     );
 
     const unsubscribe = onSnapshot(

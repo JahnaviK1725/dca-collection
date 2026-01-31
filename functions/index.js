@@ -4,7 +4,7 @@
 
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
-const {getFirestore, FieldValue} = require("firebase-admin/firestore");
+const {getFirestore} = require("firebase-admin/firestore");
 const axios = require("axios");
 const csv = require("csv-parser");
 const crypto = require("crypto");
@@ -119,3 +119,5 @@ exports.dailyFedexIngestion = functions
     res.status(500).send(err.message);
   }
 });
+
+
