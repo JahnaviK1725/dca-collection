@@ -33,7 +33,6 @@ const Dashboard = () => {
       collection(db, "cases"),
       orderBy("last_predicted_at", "desc"),
       
-      limit(100)
     );
 
     const unsubscribe = onSnapshot(

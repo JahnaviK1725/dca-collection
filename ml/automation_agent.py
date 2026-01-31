@@ -27,7 +27,10 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 # Using the high-limit Gemma model
 MODEL_NAME = "gemma-3-12b-it"
 
-# 👇 [NEW] POINT TO YOUR LOCAL FRONTEND
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+# Point to your frontend (Update this for production)
 PAYMENT_BASE_URL = "http://localhost:5173/pay"
 
 # ==========================================
@@ -55,7 +58,6 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # 🧠 AI LOGIC
 # ==========================================
 
-# 👇 [UPDATED] Now accepts doc_id to generate the link
 def generate_smart_email_content(case_data, doc_id):
     company = case_data.get('name_customer') or case_data.get('company_name') or 'Valued Customer'
     amount = case_data.get('total_open_amount', 0)
@@ -101,17 +103,33 @@ def generate_smart_email_content(case_data, doc_id):
             time.sleep(1)
     
     if not success:
-        ai_text = f"Dear {company}, friendly reminder regarding the outstanding balance of ${amount}."
+        ai_text = f"Dear {company}, friendly reminder regarding the outstanding balance of ${amount}. Please remit payment."
 
-    # 👇 [CRITICAL] Append the link to the email body
+    # Append the link to the email body
     return f"{ai_text}\n\n👉 Pay Securely Here: {payment_link}\n\nFedEx Automation Team"
 
-# 👇 [UPDATED] MOCK MODE - Does not actually send email
 def send_email(to_email, subject, body):
-    # We return True immediately to avoid "Daily Limit Exceeded" errors
-    # This simulates a successful send.
-    print(f"   📧 [MOCK SEND] Email would go to: {to_email}")
-    return True 
+    if not SENDER_EMAIL or "your-email" in SENDER_EMAIL:
+        print("   ⚠️ SENDER_EMAIL not set. Skipping actual send.")
+        return True 
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(SENDER_EMAIL, to_email, text)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"   ❌ Email Send Failed: {e}")
+        return False
 
 # ==========================================
 # 🚀 MAIN LOOP
@@ -127,6 +145,7 @@ def run_automation():
     # ----------------------------------------------------
     print("\n--- Fetching Yellow Zone Cases (Emails) ---")
     
+    # We load all IDs into memory instantly, then close the stream.
     yellow_docs = cases_ref.where(filter=FieldFilter("zone", "==", "YELLOW"))\
                            .where(filter=FieldFilter("isOpen", "==", "1"))\
                            .stream()
@@ -135,35 +154,41 @@ def run_automation():
     for doc in yellow_docs:
         yellow_work_queue.append({"id": doc.id, "data": doc.to_dict()})
         
-    # 👇 Limit to top 5 for Demo speed
-    demo_queue = yellow_work_queue[:5]
-    print(f"📋 Found {len(yellow_work_queue)} cases. Demo Mode processing top {len(demo_queue)}...")
+    print(f"📋 Found {len(yellow_work_queue)} cases. Processing...")
     
     email_count = 0
     
-    for task in demo_queue:
+    for task in yellow_work_queue:
         doc_id = task["id"]
         data = task["data"]
         company = data.get('name_customer') or data.get('company_name') or 'Client'
         
-        # Spam Check (Skipped for demo purposes usually, but keeping it)
+        # 🛡️ Spam Check / Date Check (Restored)
         last_contact = data.get('last_contacted_at')
         if last_contact:
-             # Simple date check logic here...
-             pass
+            if hasattr(last_contact, 'date'):
+                last_date = last_contact.date()
+            else:
+                # Handle cases where it might be a method or different object
+                last_date = last_contact.today().date()
+            
+            if last_date == datetime.now().date():
+                print(f"   ⏭️  Skipping {company} (Already contacted today)")
+                continue
 
         sanitized_company = company.strip().replace(" ", "").replace(",", "").lower()
         target_email = f"{sanitized_company}@doesnotexistxyz.com"
         
         print(f"   ✨ Generating for {company}...")
         
-        # 👇 Generate with Link
+        # Generate content with Payment Link
         email_body = generate_smart_email_content(data, doc_id)
         
-        # 👇 PRINT THE LINK FOR YOU TO CLICK
-        print(f"   🔗 [DEMO LINK] {PAYMENT_BASE_URL}/{doc_id}")
+        # Debug print for the link (optional, but helpful)
+        print(f"   🔗 [GENERATED LINK] {PAYMENT_BASE_URL}/{doc_id}")
 
-        if send_email(target_email, f"Payment Action Required", email_body):
+        # Send Real Email
+        if send_email(target_email, f"Payment Action Required: Invoice #{data.get('invoice_id')}", email_body):
             email_count += 1
             
             # Log to Firestore
@@ -187,7 +212,7 @@ def run_automation():
                 "last_contacted_at": firestore.SERVER_TIMESTAMP
             })
 
-    print(f"\n✅ Demo Automation Complete. Processed {email_count} emails.")
+    print(f"\n✅ Automation Complete. Sent {email_count} emails.")
 
 if __name__ == "__main__":
     run_automation()
