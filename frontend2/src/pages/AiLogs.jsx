@@ -6,7 +6,6 @@ const AiLogs = () => {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    // Query the NEW 'ai_logs' collection we created in the python script
     const q = query(collection(db, "ai_logs"), orderBy("timestamp", "desc"));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -17,7 +16,6 @@ const AiLogs = () => {
     return () => unsubscribe();
   }, []);
 
-  // Split into columns
   const mailLogs = logs.filter(l => l.type === "MAIL");
   const callLogs = logs.filter(l => l.type === "CALL");
 
@@ -61,7 +59,7 @@ const AiLogs = () => {
         {/* COLUMN 2: CALLS */}
         <div style={styles.column}>
           <div style={styles.colHeader}>
-            <span style={{ fontSize: "20px" }}>📞 Scheduled Calls</span>
+            <span style={{ fontSize: "20px" }}>📞 Automated Calls</span>
             <span style={styles.countBadge}>{callLogs.length}</span>
           </div>
 
@@ -74,12 +72,25 @@ const AiLogs = () => {
                     {log.timestamp?.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                   </span>
                 </div>
+                
                 <div style={styles.target}>Orange Zone • High Priority</div>
+                
+                {/* Script Text */}
                 <div style={styles.bodyPreview}>
-                   {log.content}
+                   "{log.content}"
                 </div>
+
+                {/* AUDIO PLAYER */}
+                {log.audio_url ? (
+                  <div style={{ marginTop: "10px", marginBottom: "10px" }}>
+                    <audio controls src={log.audio_url} style={{ width: "100%", height: "30px" }} />
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "12px", color: "red" }}>Audio unavailable</div>
+                )}
+
                 <div style={{...styles.status, color: '#f97316', background: '#ffedd5'}}>
-                    ⏳ Queued for Agent
+                    🎧 Voicemail Generated
                 </div>
               </div>
             ))}
