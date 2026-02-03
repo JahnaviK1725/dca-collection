@@ -111,12 +111,13 @@ const AddCaseModal = ({ onClose }) => {
       const slaDateObj = new Date();
       slaDateObj.setDate(slaDateObj.getDate() + calculatedSlaDays);
       const slaDateString = slaDateObj.toISOString().split('T')[0];
-
+      const amountVal = Number(formData.amount);
       await addDoc(collection(db, "cases"), {
         invoice_id: formData.invoice_id,
         name_customer: cleanName,
         cust_number: finalCustNumber,
-        total_open_amount: Number(formData.amount),
+        total_open_amount: amountVal,
+        original_amount: amountVal,
         due_date: formData.due_date,
         document_create_date: new Date().toISOString().split('T')[0],
         predicted_delay: 0.0,

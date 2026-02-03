@@ -41,13 +41,25 @@ const Dashboard = () => {
         const rows = [];
         snapshot.docs.forEach((doc) => {
           const d = doc.data();
-
+          const originalAmount = Number(d.original_amount || d.total_open_amount || 0);
+        
+        // 2. Get the Dynamic Open Amount
+        const currentOpenAmount = Number(d.total_open_amount || 0);
+        
+        // 3. Determine "Display Amount" based on Status
+        // If Open: Show what is owed (Current)
+        // If Closed: Show what the loan WAS (Original)
+        const isOpen = d.isOpen == '1' || d.is_open_flag === true;
+        const displayAmount = isOpen ? currentOpenAmount : originalAmount;
           rows.push({
             id: doc.id,
             invoice_id: d.invoice_id || d.doc_id || doc.id,
             company_name: d.company_name || d.name_customer || "Unknown Company",
-            invoice_amount: Number(d.total_open_amount || d.invoice_amount || 0),
-            outstanding_amount: Number(d.total_open_amount || 0),
+            invoice_amount: displayAmount, 
+            
+            // We keep these for other logic/calculations
+            outstanding_amount: currentOpenAmount,
+            original_amount: originalAmount,
             due_date: d.due_date ? new Date(d.due_date).toLocaleDateString() : "—",
             predicted_payment_date: d.predicted_payment_date || "—",
             predicted_delay: d.predicted_delay !== undefined ? Number(d.predicted_delay) : null,
@@ -58,6 +70,7 @@ const Dashboard = () => {
             escalated: Boolean(d.escalated),
             last_predicted_at: d.last_predicted_at,
             total_open_amount: d.total_open_amount,
+            isOpen: isOpen
           });
         });
 

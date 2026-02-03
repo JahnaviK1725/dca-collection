@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+// ==========================================
+// FILE: src/pages/CustomerProfile.jsx
+// ==========================================
+
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   doc,
@@ -15,8 +19,12 @@ const CustomerProfile = () => {
   const { customerId } = useParams();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
-  const [invoices, setInvoices] = useState([]);
+  const [allInvoices, setAllInvoices] = useState([]); // Store ALL invoices
   const [loading, setLoading] = useState(true);
+  
+  // New State for handling name collisions
+  const [subEntities, setSubEntities] = useState([]); 
+  const [selectedEntity, setSelectedEntity] = useState("All");
 
   // --- 1. STRATEGY LOGIC ENGINE ---
   const getCustomerStrategy = (p) => {
@@ -77,10 +85,21 @@ const CustomerProfile = () => {
         );
         const querySnapshot = await getDocs(q);
         const invList = [];
-        querySnapshot.forEach((doc) =>
-          invList.push({ id: doc.id, ...doc.data() })
-        );
-        setInvoices(invList);
+        const namesSet = new Set();
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          invList.push({ id: doc.id, ...data });
+          if (data.name_customer) namesSet.add(data.name_customer.trim());
+        });
+
+        setAllInvoices(invList);
+        
+        const uniqueNames = Array.from(namesSet).sort();
+        if (uniqueNames.length > 1) {
+            setSubEntities(["All", ...uniqueNames]);
+        }
+
       } catch (error) {
         console.error("Error fetching customer:", error);
       } finally {
@@ -90,8 +109,37 @@ const CustomerProfile = () => {
     fetchData();
   }, [customerId]);
 
-  if (loading) return <div style={{ padding: 40 }}>Loading Customer DNA...</div>;
-  if (!profile) return <div style={{ padding: 40 }}>Customer Profile Not Found</div>;
+  // Filter invoices based on selection
+  const filteredInvoices = useMemo(() => {
+      if (selectedEntity === "All") return allInvoices;
+      return allInvoices.filter(inv => inv.name_customer?.trim() === selectedEntity);
+  }, [selectedEntity, allInvoices]);
+
+  // --- NEW: CALCULATE TOTAL DEBT DYNAMICALLY ---
+  const { totalDebt, openCount } = useMemo(() => {
+    let debt = 0;
+    let count = 0;
+
+    filteredInvoices.forEach(inv => {
+        const amount = Number(inv.total_open_amount || 0);
+        
+        // Robust "Is Open" check matching your Python/Table logic
+        const hasClearDate = inv.clear_date && inv.clear_date !== "NaN" && inv.clear_date !== "";
+        const isExplicitlyClosed = inv.is_open_flag === false || String(inv.isOpen) === "0";
+        // Logic: It is open if flagged open OR (amount > 0 AND not explicitly closed)
+        const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (amount > 0 && !hasClearDate && !isExplicitlyClosed);
+
+        if (isOpen) {
+            debt += amount;
+            count += 1;
+        }
+    });
+
+    return { totalDebt: debt, openCount: count };
+  }, [filteredInvoices]);
+
+  if (loading) return <div style={{ padding: 40 }}>Loading...</div>;
+  if (!profile) return <div style={{ padding: 40 }}>Profile Not Found</div>;
 
   const strategy = getCustomerStrategy(profile);
   const isVolatile = profile.std_payment_delay > 5;
@@ -104,9 +152,12 @@ const CustomerProfile = () => {
       {/* HEADER */}
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>{profile.company_name}</h1>
+          <h1 style={styles.title}>
+            {selectedEntity !== "All" ? selectedEntity : profile.company_name}
+          </h1>
           <span style={styles.subId}>ID: {profile.cust_number}</span>
         </div>
+        
         <div style={styles.badges}>
           {isHabitual && <span style={styles.badBadge}>⚠️ Habitual Late Payer</span>}
           {isVolatile && <span style={styles.warnBadge}>⚡ Volatile Behavior</span>}
@@ -114,65 +165,83 @@ const CustomerProfile = () => {
         </div>
       </div>
 
+      {/* SUB-ENTITY SELECTOR */}
+      {subEntities.length > 0 && (
+          <div style={{marginBottom: '20px'}}>
+              <span style={{fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginRight: '10px'}}>
+                  FILTER BY BRANCH:
+              </span>
+              {subEntities.map(name => (
+                  <button 
+                    key={name}
+                    onClick={() => setSelectedEntity(name)}
+                    style={{
+                        ...styles.filterBtn,
+                        backgroundColor: selectedEntity === name ? '#3b82f6' : '#f1f5f9',
+                        color: selectedEntity === name ? 'white' : '#475569'
+                    }}
+                  >
+                      {name}
+                  </button>
+              ))}
+          </div>
+      )}
+
       <div style={styles.grid}>
         
-        {/* LEFT COLUMN: METRICS & STRATEGY */}
+        {/* LEFT COLUMN */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '24px'}}>
           
-          {/* 1. METRICS CARD */}
+          {/* 1. ANALYSIS CARD */}
           <div style={styles.card}>
-            <h3>🧬 Behavior Analysis (ML Derived)</h3>
+            <h3>🧬 Behavior Analysis</h3>
             
-            {/* --- SPECTRUM CHART AREA --- */}
+            {/* --- TOTAL DEBT COMPONENT --- */}
+            <div style={styles.debtContainer}>
+                <div style={styles.debtLabel}>Total Outstanding Debt</div>
+                <div style={styles.debtAmount}>
+                    ${totalDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div style={styles.debtSub}>
+                    Across {openCount} open invoices
+                </div>
+            </div>
+            {/* ---------------------------------- */}
+
+            {/* SPECTRUM CHART */}
             <div style={styles.chartArea}>
               <p style={styles.label}>Paying Habit Spectrum</p>
-
-              {/* The Spectrum Bar */}
-              <div
-                style={{
+              <div style={{
                   ...styles.barBg,
-                  position: "relative", // Needed for the absolute pointer
-                  height: "10px", // slightly thicker for visibility
-                  background:
-                    "linear-gradient(to right, #10b981, #f59e0b, #ef4444)", // Green -> Yellow -> Red
-                  borderRadius: "5px",
+                  position: "relative",
+                  height: "10px",
+                  background: "linear-gradient(to right, #10b981, #f59e0b, #ef4444)",
                   marginTop: "10px",
                   marginBottom: "10px",
                 }}
               >
-                {/* The Pointer */}
-                <div
-                  style={{
+                <div style={{
                     position: "absolute",
-                    left: `${Math.min(100, Math.max(0, profile.late_payment_ratio * 100))}%`, // Clamp between 0-100%
-                    top: "50%", // Center vertically relative to bar
-                    transform: "translate(-50%, -50%)", // Center the pointer itself
+                    left: `${Math.min(100, Math.max(0, profile.late_payment_ratio * 100))}%`,
+                    top: "50%",
+                    transform: "translate(-50%, -50%)",
                     width: "16px",
                     height: "16px",
                     backgroundColor: "#fff",
-                    border: "4px solid #a11aa6ff", // Dark border to make it pop
-                    borderRadius: "50%", // Make it circular
+                    border: "4px solid #a11aa6ff",
+                    borderRadius: "50%",
                     boxShadow: "0 2px 4px rgba(223, 22, 182, 0.2)",
-                    transition: "left 0.3s ease-in-out", // Smooth movement
+                    transition: "left 0.3s ease-in-out",
                   }}
                 ></div>
               </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "12px",
-                  color: "#666",
-                  marginBottom: "20px" // Add some spacing below
-                }}
-              >
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#666", marginBottom: "20px" }}>
                 <span>Always On Time</span>
                 <span>Always Late</span>
               </div>
             </div>
-            {/* --- END SPECTRUM CHART AREA --- */}
 
+            {/* METRICS ROW */}
             <div style={styles.metricRow}>
               <div style={styles.metric}>
                 <span style={styles.label}>Avg Delay</span>
@@ -189,30 +258,24 @@ const CustomerProfile = () => {
             </div>
           </div>
 
-          {/* 2. AI STRATEGY CONSOLE (NEW FEATURE) */}
+          {/* 2. AI STRATEGY CARD */}
           <div style={{...styles.card, borderLeft: `6px solid ${strategy.color}`}}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: '15px'}}>
                 <h3 style={{margin:0}}>🧠 AI Collection Strategy</h3>
-                <span style={{
-                    background: strategy.bg, color: strategy.color, 
-                    padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold'
-                }}>
+                <span style={{ background: strategy.bg, color: strategy.color, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
                     {strategy.mode}
                 </span>
             </div>
-
             <div style={{marginBottom: '20px'}}>
                 <div style={styles.stratLabel}>💡 Recommendation</div>
                 <div style={styles.stratText}>{strategy.advice}</div>
             </div>
-
             <div style={{marginBottom: '20px'}}>
                 <div style={styles.stratLabel}>🗣️ Suggested Script</div>
                 <div style={styles.scriptBox}>
                     <i>{strategy.script}</i>
                 </div>
             </div>
-
             <div>
                 <div style={styles.stratLabel}>⏩ Next Best Action</div>
                 <div style={{fontSize: '14px', fontWeight: '500', color: '#1f2937'}}>
@@ -220,12 +283,15 @@ const CustomerProfile = () => {
                 </div>
             </div>
           </div>
-
         </div>
 
         {/* RIGHT COLUMN: INVOICE LIST */}
         <div style={styles.card}>
-          <h3>🗂 Recent Invoices ({invoices.length})</h3>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <h3>🗂 Invoices ({filteredInvoices.length})</h3>
+            {selectedEntity !== 'All' && <span style={{fontSize:'12px', color:'#64748b'}}>Filtered by: {selectedEntity}</span>}
+          </div>
+          
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
               <thead>
@@ -236,14 +302,18 @@ const CustomerProfile = () => {
                 </tr>
               </thead>
               <tbody>
-                  {invoices.slice(0, 8).map((inv) => {
-                    // Safe Number Conversion
-                    const amount = Number(inv.total_open_amount || inv.invoice_amount || 0);
-                    
-                    // Open logic
+                  {filteredInvoices.slice(0, 10).map((inv) => {
+                    // 🟢 ROBUST AMOUNT DISPLAY LOGIC
+                    const currentAmount = Number(inv.total_open_amount || 0);
+                    const originalAmount = Number(inv.original_amount || inv.invoice_amount || currentAmount);
+
                     const hasClearDate = inv.clear_date && inv.clear_date !== "NaN" && inv.clear_date !== "";
                     const isExplicitlyClosed = inv.is_open_flag === false || String(inv.isOpen) === "0";
-                    const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (amount > 0 && !hasClearDate && !isExplicitlyClosed);
+                    const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (currentAmount > 0 && !hasClearDate && !isExplicitlyClosed);
+
+                    // If OPEN -> Show Current Balance
+                    // If CLOSED -> Show Original Invoice Amount
+                    const displayAmount = isOpen ? currentAmount : originalAmount;
 
                     return (
                       <tr key={inv.id}>
@@ -254,7 +324,7 @@ const CustomerProfile = () => {
                           <div style={{fontSize: '11px', color: '#94a3b8'}}>{inv.document_create_date}</div>
                         </td>
                         <td style={styles.td}>
-                          ${amount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                          ${displayAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
                         </td>
                         <td style={styles.td}>
                           <span style={{
@@ -287,25 +357,30 @@ const styles = {
   badBadge: { background: "#fee2e2", color: "#991b1b", padding: "6px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" },
   warnBadge: { background: "#ffedd5", color: "#9a3412", padding: "6px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" },
   goodBadge: { background: "#dcfce7", color: "#166534", padding: "6px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" },
+  
+  filterBtn: { border: 'none', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', cursor: 'pointer', marginRight: '8px', fontWeight: '500', transition: 'all 0.2s' },
 
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" },
   card: { background: "white", padding: "24px", borderRadius: "16px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)", border: "1px solid #e2e8f0" },
+  
+  // New Debt Styles
+  debtContainer: { background: "#f8fafc", padding: "16px", borderRadius: "12px", marginBottom: "24px", border: "1px solid #e2e8f0", textAlign: 'center' },
+  debtLabel: { fontSize: "12px", textTransform: "uppercase", color: "#64748b", fontWeight: "bold", letterSpacing: "0.5px" },
+  debtAmount: { fontSize: "32px", fontWeight: "800", color: "#0f172a", margin: "4px 0" },
+  debtSub: { fontSize: "12px", color: "#94a3b8" },
 
-  // Metrics Styles
   metricRow: { display: "flex", justifyContent: "space-between" },
   metric: { display: "flex", flexDirection: "column" },
   label: { fontSize: "11px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: "600" },
   value: { fontSize: "24px", fontWeight: "bold", color: "#0f172a", marginTop: "4px" },
-
-  // Chart Styles (New)
+  
   chartArea: { marginBottom: "10px" },
   barBg: { width: "100%", borderRadius: "6px" },
-
-  // Strategy Console Styles
+  
   stratLabel: { fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' },
   stratText: { fontSize: '15px', color: '#374151', lineHeight: '1.5' },
   scriptBox: { background: '#f8fafc', padding: '12px', borderLeft: '3px solid #cbd5e1', color: '#4b5563', fontSize: '14px' },
-
+  
   table: { width: "100%", borderCollapse: "collapse" },
   th: { textAlign: "left", padding: "10px", borderBottom: "1px solid #e2e8f0", fontSize: "12px", color: "#64748b", textTransform: 'uppercase' },
   td: { padding: "12px 10px", borderBottom: "1px solid #f8fafc", fontSize: "14px" },

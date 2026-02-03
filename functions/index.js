@@ -12,6 +12,7 @@ const crypto = require("crypto");
 admin.initializeApp();
 const db = getFirestore();
 
+// Ensure this URL points to your UPDATED CSV (raw format)
 const CSV_URL = "https://raw.githubusercontent.com/coutdarknight/dataset/main/dataset.csv";
 const BATCH_SIZE = 500;
 
@@ -58,6 +59,12 @@ exports.dailyFedexIngestion = functions
             continue;
           }
 
+          // Parse amounts safely
+          const currentAmount = Number(row.total_open_amount) || Number(row.invoice_amount) || 0;
+          
+          // 🟢 LOGIC: Use 'original_amount' from CSV if present, else default to current
+          const originalAmount = row.original_amount ? Number(row.original_amount) : currentAmount;
+
           batch.set(
             ref,
             {
@@ -75,14 +82,17 @@ exports.dailyFedexIngestion = functions
               document_type: row["document type"] || "",
               posting_id: row.posting_id || "",
               area_business: row.area_business || "",
-              total_open_amount: Number(row.total_open_amount) || 0,
+              
+              // 🟢 AMOUNT FIELDS
+              total_open_amount: currentAmount,
+              original_amount: originalAmount,
+
               baseline_create_date: row.baseline_create_date || "",
               cust_payment_terms: row.cust_payment_terms || "",
               invoice_id: row.invoice_id || "",
               isOpen: row.isOpen || "",
               checksum,
               updatedAt: new Date(),
-
             },
             {merge: true},
           );
@@ -119,5 +129,3 @@ exports.dailyFedexIngestion = functions
     res.status(500).send(err.message);
   }
 });
-
-

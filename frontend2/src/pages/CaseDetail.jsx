@@ -75,13 +75,14 @@ const CaseDetail = () => {
     if (!window.confirm("Mark this case as resolved/closed?")) return;
     setClosing(true);
     const ref = doc(db, "cases", id);
-    updateDoc(ref, {
+    await updateDoc(ref, {
         isOpen: '0',
         is_open_flag: false,
+        total_open_amount: 0, // Zero out the balance
         zone: 'GREEN',
         action: 'NO_ACTION',
         closed_at: serverTimestamp(),
-        last_predicted_at: deleteField() 
+        last_predicted_at: deleteField()
     }).catch(console.error);
     navigate(-1); 
   };
@@ -113,7 +114,12 @@ FedEx Accounts Receivable`;
   const theme = getZoneTheme(caseData.zone);
   const isBreach = caseData.predicted_delay > caseData.sla_days;
   const isOpen = caseData.is_open_flag !== false;
-
+  const originalAmount = Number(caseData.original_amount || caseData.total_open_amount || 0);
+  const currentAmount = Number(caseData.total_open_amount || 0);
+  
+  // If Closed, we show the Original Amount in the header stats
+  // If Open, we show the Current Amount
+  const displayAmount = isOpen ? currentAmount : originalAmount;
   return (
     <div style={styles.container}>
       {/* HEADER */}
@@ -294,11 +300,19 @@ FedEx Accounts Receivable`;
             <div style={styles.card}>
                 <h3 style={styles.cardTitle}>📄 Invoice Details</h3>
                 <div style={styles.statRow}>
-                    <span>Total Amount</span>
+                    <span>{isOpen ? "Outstanding Amount" : "Original Loan Amount"}</span>
                     <span style={styles.statValue}>
-                        {caseData.invoice_currency || 'USD'} {Number(caseData.total_open_amount).toLocaleString()}
+                        { 'USD'} {displayAmount.toLocaleString()}
                     </span>
                 </div>
+                {isOpen && originalAmount > currentAmount && (
+                   <div style={styles.statRow}>
+                       <span>Original Amount</span>
+                       <span style={{color: '#94a3b8'}}>
+                           {Number(originalAmount).toLocaleString()}
+                       </span>
+                   </div>
+               )}
                 <div style={styles.statRow}>
                     <span>Invoice Date</span>
                     <span>{formatDate(caseData.document_create_date)}</span>
@@ -326,7 +340,7 @@ FedEx Accounts Receivable`;
                 <div style={styles.statRow}>
                     <span>Name</span>
                     <Link 
-                      to={`/customer/${caseData.cust_number || caseData.customer_id}`} 
+                      to={`/admin/customer/${caseData.cust_number || caseData.customer_id}`} 
                       style={{ textDecoration: 'none', color: '#2563eb', fontWeight: 'bold', borderBottom: '1px dotted #2563eb' }}
                     >
                         {caseData.name_customer || "Unknown Customer"} ↗

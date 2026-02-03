@@ -128,7 +128,9 @@ const SearchCase = () => {
                                 </span>
                             </td>
                             <td style={styles.td}>
-                                <button onClick={() => navigate(`/case/${c.id}`)} style={styles.btn}>View →</button>
+                                <button onClick={() => navigate(`/admin/case/${c.id}`)} style={styles.btn}>
+        View →
+    </button>
                             </td>
                         </tr>
                     ))}

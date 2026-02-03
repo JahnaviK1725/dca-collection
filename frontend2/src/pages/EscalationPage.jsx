@@ -109,7 +109,7 @@ const EscalationPage = () => {
                   <button
                     className="view-btn"
                     onClick={() =>
-                      navigate(`/case/${t.invoice_id || t.id}`)
+                      navigate(`/admin/case/${t.invoice_id || t.id}`)
                     }
                   >
                     View Case →

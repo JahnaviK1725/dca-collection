@@ -62,7 +62,7 @@ const CaseTable = ({ cases = [] }) => {
               return (
                 <tr
                   key={c.id}
-                  onClick={() => navigate(`/case/${c.id}`)}
+                  onClick={() => navigate(`/admin/case/${c.id}`)}
                   style={{
                     borderBottom: "1px solid #eee",
                     cursor: "pointer",
