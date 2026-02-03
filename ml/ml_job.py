@@ -7,7 +7,7 @@ import os
 import sys
 import json
 import time
-from tqdm import tqdm  # <--- IMPORT ADDED
+from tqdm import tqdm
 
 import firebase_admin
 from firebase_admin import firestore
@@ -16,14 +16,12 @@ from google.cloud import firestore as google_firestore
 # --------------------
 # CONFIG
 # --------------------
-# 1. Force connection to Local Emulator
 os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8085"
 os.environ["GCLOUD_PROJECT"] = "fedex-dca"
 
-MODEL_PATH = "model/payment_delay_lgb_model.txt"       # your saved LightGBM model
+MODEL_PATH = "model/payment_delay_lgb_model.txt"
 BATCH_COMMIT_SIZE = 400
 
-# Features that the model expects
 MODEL_FEATURES = [
     "total_open_amount", "due_days", "avg_due_days", "avg_payment_delay",
     "std_payment_delay", "avg_days_to_clear", "avg_invoice_amount",
@@ -31,15 +29,13 @@ MODEL_FEATURES = [
 ]
 
 # --------------------
-# 1. INITIALIZATION (EMULATOR ONLY)
+# 1. INITIALIZATION
 # --------------------
 print(f"⚠️  Running in EMULATOR mode at {os.environ['FIRESTORE_EMULATOR_HOST']}")
 
-# Initialize Firebase Admin with a dummy project ID (no credentials needed for emulator)
 if not firebase_admin._apps:
     firebase_admin.initialize_app(options={'projectId': 'fedex-dca'})
 
-# Connect directly to the emulator project
 db = google_firestore.Client(project="fedex-dca")
 
 if not os.path.exists(MODEL_PATH):
@@ -57,31 +53,20 @@ def safe_to_datetime(series, fmt=None):
 def assign_zone(pred_delay, sla_days, sla_date, today=None):
     if today is None:
         today = pd.Timestamp.today().normalize()
-
-    # 1. Hard SLA breach
     if sla_date is not None and today > sla_date:
         return "RED"
-
-    # 2. Missing prediction
     if pred_delay is None or pd.isna(pred_delay):
         return "UNKNOWN"
-
-    # 3. No predicted delay
     if pred_delay <= 0:
         return "GREEN"
-
-    # 4. If SLA date is unknown, fall back to delay-only logic
     if sla_date is None:
         return "ORANGE"
-
     days_left = (sla_date - today).days
     predicted_delay = math.ceil(pred_delay)
-
-    # 5. Risk zones
     if predicted_delay < days_left:
-        return "YELLOW"   # delay but recoverable
+        return "YELLOW"
     else:
-        return "ORANGE"   # likely breach
+        return "ORANGE"
 
 def derive_sla_days(late_ratio):
     try:
@@ -104,19 +89,45 @@ def run_ml_job():
     docs = db.collection("cases").stream()
 
     rows = []
-    for doc in docs:
+    
+    # Init batch for backfilling original_amount
+    batch = db.batch()
+    batch_count = 0
+    backfill_counter = 0
+
+    for doc in tqdm(docs, desc="Fetching & Backfilling"):
         d = doc.to_dict()
         d["_doc_id"] = doc.id
+        
+        # Backfill original_amount if missing
+        if "original_amount" not in d:
+            current_total = d.get("total_open_amount", d.get("invoice_amount", 0))
+            d["original_amount"] = current_total
+            
+            doc_ref = db.collection("cases").document(doc.id)
+            batch.update(doc_ref, {"original_amount": current_total})
+            batch_count += 1
+            backfill_counter += 1
+
         rows.append(d)
 
+        if batch_count >= BATCH_COMMIT_SIZE:
+            batch.commit()
+            batch = db.batch()
+            batch_count = 0
+    
+    if batch_count > 0:
+        batch.commit()
+        print(f"✅ Backfilled 'original_amount' for {backfill_counter} cases.")
+
     if not rows:
-        print("No cases found in Firestore Emulator. Exiting.")
+        print("No cases found. Exiting.")
         return
 
     df = pd.DataFrame(rows)
     print(f"Total cases fetched: {len(df)}")
 
-    # 3.2 Parse dates robustly
+    # 3.2 Parse Dates
     if "document_create_date" in df.columns:
         df["invoice_date"] = safe_to_datetime(df["document_create_date"], fmt="%Y%m%d")
     else:
@@ -136,11 +147,10 @@ def run_ml_job():
     else:
         df["total_open_amount"] = pd.to_numeric(df.get("total_open_amount", 0), errors="coerce").fillna(0.0)
 
-    # currency normalization
     df["invoice_currency"] = df.get("invoice_currency", "USD").fillna("USD")
     df["total_open_amount"] = np.where(df["invoice_currency"] == "CAD", df["total_open_amount"] * 0.75, df["total_open_amount"])
 
-    # 3.4 Create base metrics
+    # 3.4 Metrics
     df["payment_delay"] = (df["clear_date"] - df["due_date"]).dt.days
     df["due_days"] = (df["due_date"] - df["invoice_date"]).dt.days
     df["invoice_age_at_clearing"] = (df["clear_date"] - df["invoice_date"]).dt.days
@@ -152,73 +162,88 @@ def run_ml_job():
     if "name_customer" not in df.columns:
         df["name_customer"] = df.get("company_name", "")
 
-    # 3.5 Determine open vs closed flags
+    # 3.5 Flags
     if "isOpen" in df.columns:
-    # isOpen comes as string "0"/"1"
         df["is_open_flag"] = df["isOpen"].astype(str).isin(["1", "true", "True"])
     elif "is_open" in df.columns:
         df["is_open_flag"] = df["is_open"] == 1
     else:
-        # fallback
         df["is_open_flag"] = df["clear_date"].isna()
 
     history_df = df[~df["is_open_flag"]].copy()
     open_df = df[df["is_open_flag"]].copy()
 
-    # 3.6 Build company_features
-    if history_df.empty:
-        print("No historical closed invoices found. Cold starts.")
-        company_features = pd.DataFrame(columns=[
-            "cust_number", "avg_payment_delay", "std_payment_delay", "min_delay", "max_delay",
-            "avg_days_to_clear", "avg_due_days", "avg_invoice_amount",
-            "total_lifetime_value", "transaction_count", "company_name"
-        ])
-    else:
+    # ==============================================================================
+    # 3.6 🛠️ FIX: BUILD COMPANY FEATURES FOR ALL CUSTOMERS (Open + Closed)
+    # ==============================================================================
+    print("Building Company Profile Features...")
+
+    # Step A: Get unique list of ALL customers (even those with no history)
+    # We group by ID and pick the most frequent name to handle variations
+    all_customers = df.groupby("cust_number")["name_customer"].agg(
+        lambda x: x.mode().iat[0] if not x.mode().empty else x.iloc[0]
+    ).reset_index().rename(columns={"name_customer": "company_name"})
+
+    # Step B: Calculate stats ONLY for closed cases (History)
+    if not history_df.empty:
         grp = history_df.groupby("cust_number")
         agg = grp.agg({
             "payment_delay": ["mean", "std", "min", "max"],
             "invoice_age_at_clearing": ["mean"],
             "due_days": ["mean"],
-            "total_open_amount": ["mean", "sum", "count"],
-            "name_customer": lambda x: x.mode().iat[0] if not x.mode().empty else x.iloc[0]
+            "total_open_amount": ["mean", "sum", "count"]
         })
         agg.columns = [
             "avg_payment_delay", "std_payment_delay", "min_delay", "max_delay",
             "avg_days_to_clear", "avg_due_days",
-            "avg_invoice_amount", "total_lifetime_value", "transaction_count",
-            "company_name"
+            "avg_invoice_amount", "total_lifetime_value", "transaction_count"
         ]
-        company_features = agg.reset_index()
+        historical_stats = agg.reset_index()
 
+        # Ratio calc
         late_counts = history_df[history_df["payment_delay"] > 0].groupby("cust_number").size()
         total_counts = history_df.groupby("cust_number").size()
         late_ratio = (late_counts / total_counts).fillna(0).rename("late_payment_ratio").reset_index()
+        
+        historical_stats = historical_stats.merge(late_ratio, on="cust_number", how="left")
+    else:
+        # Create empty DF with expected columns if no history exists at all
+        historical_stats = pd.DataFrame(columns=["cust_number"])
 
-        company_features = company_features.merge(late_ratio, on="cust_number", how="left")
-        company_features["late_payment_ratio"] = company_features["late_payment_ratio"].fillna(0)
-        company_features["std_payment_delay"] = company_features["std_payment_delay"].fillna(0)
+    # Step C: Left Join All Customers with History
+    # This ensures clients with only OPEN cases still get a row
+    company_features = all_customers.merge(historical_stats, on="cust_number", how="left")
+
+    # Step D: Fill Cold-Start Defaults for new customers
+    defaults = {
+        "avg_payment_delay": 0.0, "std_payment_delay": 0.0,
+        "min_delay": 0.0, "max_delay": 0.0,
+        "avg_days_to_clear": 30.0, "avg_due_days": 30.0,
+        "avg_invoice_amount": 0.0, "total_lifetime_value": 0.0,
+        "transaction_count": 0, "late_payment_ratio": 0.0
+    }
+    company_features.fillna(defaults, inplace=True)
 
     # Persist company_features
-    print(f"Persisting {len(company_features)} company feature docs to Emulator...")
+    print(f"Persisting {len(company_features)} company feature docs...")
     batch = db.batch()
     commit_count = 0
     
-    # Optional: You can add tqdm here too if this step is slow
-    for _, row in company_features.iterrows():
+    for _, row in tqdm(company_features.iterrows(), total=len(company_features), desc="Saving Profiles"):
         doc_ref = db.collection("company_features").document(str(row["cust_number"]))
         payload = {
             "cust_number": str(row["cust_number"]),
-            "company_name": row.get("company_name", "") if not pd.isna(row.get("company_name", "")) else "",
-            "avg_payment_delay": float(row.get("avg_payment_delay") or 0.0),
-            "std_payment_delay": float(row.get("std_payment_delay") or 0.0),
-            "min_delay": float(row.get("min_delay") or 0.0),
-            "max_delay": float(row.get("max_delay") or 0.0),
-            "avg_days_to_clear": float(row.get("avg_days_to_clear") or 0.0),
-            "avg_due_days": float(row.get("avg_due_days") or 0.0),
-            "avg_invoice_amount": float(row.get("avg_invoice_amount") or 0.0),
-            "total_lifetime_value": float(row.get("total_lifetime_value") or 0.0),
-            "transaction_count": int(row.get("transaction_count") or 0),
-            "late_payment_ratio": float(row.get("late_payment_ratio") or 0.0),
+            "company_name": row.get("company_name", "") if not pd.isna(row.get("company_name", "")) else "Unknown",
+            "avg_payment_delay": float(row["avg_payment_delay"]),
+            "std_payment_delay": float(row["std_payment_delay"]),
+            "min_delay": float(row["min_delay"]),
+            "max_delay": float(row["max_delay"]),
+            "avg_days_to_clear": float(row["avg_days_to_clear"]),
+            "avg_due_days": float(row["avg_due_days"]),
+            "avg_invoice_amount": float(row["avg_invoice_amount"]),
+            "total_lifetime_value": float(row["total_lifetime_value"]),
+            "transaction_count": int(row["transaction_count"]),
+            "late_payment_ratio": float(row["late_payment_ratio"]),
             "last_updated_at": firestore.SERVER_TIMESTAMP
         }
         batch.set(doc_ref, payload, merge=True)
@@ -232,18 +257,14 @@ def run_ml_job():
 
     # 4. Enrich open invoices
     if open_df.empty:
-        print("No open invoices to score. Exiting.")
+        print("No open invoices to score.")
         return
 
     print(f"Preparing {len(open_df)} open invoices for scoring...")
     open_df = open_df.merge(company_features, on="cust_number", how="left", suffixes=("", "_cf"))
 
-    # 5. Fill cold-start defaults
-    default_company = {
-        "avg_due_days": 30, "avg_payment_delay": 0, "std_payment_delay": 0,
-        "avg_days_to_clear": 30, "avg_invoice_amount": 0, "transaction_count": 0, "late_payment_ratio": 0
-    }
-    for k, v in default_company.items():
+    # 5. Fill cold-start defaults (Safety check)
+    for k, v in defaults.items():
         if k not in open_df.columns: open_df[k] = v
         else: open_df[k] = open_df[k].fillna(v)
 
@@ -258,20 +279,19 @@ def run_ml_job():
 
     # 6. Predict
     X = open_df[MODEL_FEATURES]
-    print("Running predictions with model...")
+    print("Running predictions...")
     try:
         preds = model.predict(X)
+        open_df["predicted_delay"] = preds.astype(float)
+        open_df["predicted_payment_date"] = open_df.apply(
+            lambda r: (r["due_date"] + timedelta(days=float(r["predicted_delay"]))) if pd.notna(r["due_date"]) else pd.NaT,
+            axis=1
+        )
     except Exception as e:
         print("Model prediction failed:", e)
         return
-    print("Predictions completed.")
-    open_df["predicted_delay"] = preds.astype(float)
-    open_df["predicted_payment_date"] = open_df.apply(
-        lambda r: (r["due_date"] + timedelta(days=float(r["predicted_delay"]))) if pd.notna(r["due_date"]) else pd.NaT,
-        axis=1
-    )
 
-    # 7. SLA and Updates
+    # 7. Update Cases
     today = pd.Timestamp.today().normalize()
     batch = db.batch()
     commit_count = 0
@@ -279,10 +299,7 @@ def run_ml_job():
 
     print("Updating Firestore documents...")
     
-    # ---------------------------------------------------------
-    # TQDM ADDED HERE
-    # ---------------------------------------------------------
-    for idx, row in tqdm(open_df.iterrows(), total=len(open_df), desc="Processing Updates"):
+    for idx, row in tqdm(open_df.iterrows(), total=len(open_df), desc="Processing Predictions"):
         cust = row["cust_number"]
         late_ratio = float(row.get("late_payment_ratio", 0) or 0)
         sla_days = derive_sla_days(late_ratio)
@@ -293,16 +310,17 @@ def run_ml_job():
                 escalated = today >= sla_date
             else:
                 sla_date = None
+                escalated = False
         except Exception:
             sla_date = None
-        zone = assign_zone(pred_delay, sla_days,sla_date)
+            escalated = False
+            
+        zone = assign_zone(pred_delay, sla_days, sla_date)
 
         if zone == "GREEN": action = "NO_ACTION"
         elif zone == "YELLOW": action = "MAIL"
         elif zone == "RED": action = "ESCALATE"
         else: action = "CALL"
-
-        
 
         update_payload = {
             "predicted_delay": float(pred_delay),
