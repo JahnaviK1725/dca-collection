@@ -226,7 +226,7 @@ const ClientDashboard = () => {
                     <td style={styles.td}>{formattedDate}</td>
                     <td style={styles.td}>
                       <div style={styles.amount}>
-                        {c.invoice_currency || "$"} {parseFloat(c.total_open_amount).toLocaleString()}
+                        {"$"} {parseFloat(c.total_open_amount).toLocaleString()}
                       </div>
                     </td>
                     <td style={styles.td}>

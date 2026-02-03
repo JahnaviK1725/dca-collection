@@ -3,7 +3,7 @@
 // ==========================================
 
 // ==========================================
-// FILE: App.jsx
+// FILE: src/App.jsx
 // ==========================================
 
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
@@ -24,8 +24,8 @@ import AiBot from "./components/AiBot";
 // Client/Shared Pages
 import LandingPage from "./pages/LandingPage.jsx";
 import PaymentPortal from "./pages/PaymentPortal";
-import ClientLogin from "./pages/ClientLogin.jsx"; // NEW
-import ClientDashboard from "./pages/ClientDashboard.jsx"; // NEW
+import ClientLogin from "./pages/ClientLogin.jsx";
+import ClientDashboard from "./pages/ClientDashboard.jsx";
 
 // 1. Layout for Admin (Includes Navbar + Chatbot)
 const AdminLayout = () => (
@@ -38,14 +38,37 @@ const AdminLayout = () => (
   </>
 );
 
-// 2. Layout for Clients (Simple Header only)
+// 2. Layout for Clients (Updated Layout)
 const ClientLayout = () => (
-  <div className="client-app">
-    <header style={{ padding: "1rem", borderBottom: "1px solid #ddd", display: "flex", justifyContent: "space-between" }}>
-      <h2 style={{ color: "#4D148C", fontWeight: "bold" }}>FedEx Billing Portal</h2>
-      <a href="/" style={{ textDecoration: "none", color: "#666" }}>Logout</a>
+  <div className="client-app" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <header style={{ 
+      padding: "1rem 2rem", 
+      borderBottom: "1px solid #333", // Darker border for dark theme compatibility
+      display: "flex", 
+      justifyContent: "space-between",
+      alignItems: "center" // 👈 Centers items vertically
+    }}>
+      <h2 style={{ 
+        color: "#4D148C", 
+        fontWeight: "bold", 
+        margin: 0, // 👈 Removes default top/bottom margin causing the offset
+        fontSize: "24px"
+      }}>
+        FedEx Billing Portal
+      </h2>
+      <a 
+        href="/" 
+        style={{ 
+          textDecoration: "none", 
+          color: "#9ca3af", // Lighter grey for visibility on dark backgrounds
+          fontWeight: "500",
+          fontSize: "14px" 
+        }}
+      >
+        Logout
+      </a>
     </header>
-    <div style={{ padding: "20px" }}>
+    <div style={{ padding: "20px", flex: 1 }}>
       <Outlet />
     </div>
   </div>
@@ -795,16 +818,23 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     fontFamily: "'Inter', 'Segoe UI', sans-serif",
-    backgroundColor: '#f8f9fa',
-    color: '#333',
+    // ✨ NEW: Wallpaper Background with Dark Overlay
+    backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.7)), url(/wallpaper.avif)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundAttachment: 'fixed',
+    color: '#fff',
   },
   nav: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '1.5rem 3rem',
-    backgroundColor: '#fff',
-    borderBottom: '1px solid #e0e0e0',
+    // Slight transparency to blend with wallpaper
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(5px)',
+    borderBottom: '1px solid rgba(0,0,0,0.1)',
   },
   logo: {
     fontSize: '1.8rem',
@@ -817,6 +847,7 @@ const styles = {
     gap: '2rem',
     fontSize: '0.9rem',
     color: '#666',
+    fontWeight: '500',
   },
   navItem: {
     cursor: 'pointer',
@@ -834,15 +865,17 @@ const styles = {
     fontSize: '3rem',
     fontWeight: '800',
     marginBottom: '1rem',
-    color: '#1a1a1a',
+    color: '#ffffff', // Changed to white for contrast
     maxWidth: '800px',
     lineHeight: '1.1',
+    textShadow: '0 2px 10px rgba(0,0,0,0.3)', // Added shadow for readability
   },
   subheadline: {
     fontSize: '1.25rem',
-    color: '#666',
+    color: '#e0e0e0', // Light grey for contrast
     marginBottom: '4rem',
     maxWidth: '600px',
+    textShadow: '0 1px 5px rgba(0,0,0,0.3)',
   },
   cardContainer: {
     display: 'flex',
@@ -855,12 +888,12 @@ const styles = {
     borderRadius: '12px',
     padding: '3rem 2rem',
     width: '320px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.2)', // Stronger shadow for depth
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     transition: 'transform 0.2s ease',
-    border: '1px solid #f0f0f0',
+    border: 'none',
   },
   iconCircle: {
     width: '64px',
@@ -910,9 +943,9 @@ const styles = {
   footer: {
     textAlign: 'center',
     padding: '2rem',
-    color: '#999',
+    color: 'rgba(255, 255, 255, 0.7)', // Semi-transparent white
     fontSize: '0.85rem',
-    borderTop: '1px solid #eaeaea',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
   },
 };
 
@@ -1532,7 +1565,7 @@ const ClientDashboard = () => {
                     <td style={styles.td}>{formattedDate}</td>
                     <td style={styles.td}>
                       <div style={styles.amount}>
-                        {c.invoice_currency || "$"} {parseFloat(c.total_open_amount).toLocaleString()}
+                        {"$"} {parseFloat(c.total_open_amount).toLocaleString()}
                       </div>
                     </td>
                     <td style={styles.td}>
@@ -1867,6 +1900,10 @@ export default Dashboard;
 // START OF FILE: ./pages/CustomerProfile.jsx
 // ==========================================
 
+// ==========================================
+// FILE: src/pages/CustomerProfile.jsx
+// ==========================================
+
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -1986,10 +2023,12 @@ const CustomerProfile = () => {
     let count = 0;
 
     filteredInvoices.forEach(inv => {
-        const amount = Number(inv.total_open_amount || inv.invoice_amount || 0);
+        const amount = Number(inv.total_open_amount || 0);
+        
         // Robust "Is Open" check matching your Python/Table logic
         const hasClearDate = inv.clear_date && inv.clear_date !== "NaN" && inv.clear_date !== "";
         const isExplicitlyClosed = inv.is_open_flag === false || String(inv.isOpen) === "0";
+        // Logic: It is open if flagged open OR (amount > 0 AND not explicitly closed)
         const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (amount > 0 && !hasClearDate && !isExplicitlyClosed);
 
         if (isOpen) {
@@ -2059,7 +2098,7 @@ const CustomerProfile = () => {
           <div style={styles.card}>
             <h3>🧬 Behavior Analysis</h3>
             
-            {/* --- NEW: TOTAL DEBT COMPONENT --- */}
+            {/* --- TOTAL DEBT COMPONENT --- */}
             <div style={styles.debtContainer}>
                 <div style={styles.debtLabel}>Total Outstanding Debt</div>
                 <div style={styles.debtAmount}>
@@ -2166,10 +2205,17 @@ const CustomerProfile = () => {
               </thead>
               <tbody>
                   {filteredInvoices.slice(0, 10).map((inv) => {
-                    const amount = Number(inv.total_open_amount || inv.invoice_amount || 0);
+                    // 🟢 ROBUST AMOUNT DISPLAY LOGIC
+                    const currentAmount = Number(inv.total_open_amount || 0);
+                    const originalAmount = Number(inv.original_amount || inv.invoice_amount || currentAmount);
+
                     const hasClearDate = inv.clear_date && inv.clear_date !== "NaN" && inv.clear_date !== "";
                     const isExplicitlyClosed = inv.is_open_flag === false || String(inv.isOpen) === "0";
-                    const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (amount > 0 && !hasClearDate && !isExplicitlyClosed);
+                    const isOpen = inv.is_open_flag === true || String(inv.isOpen) === "1" || (currentAmount > 0 && !hasClearDate && !isExplicitlyClosed);
+
+                    // If OPEN -> Show Current Balance
+                    // If CLOSED -> Show Original Invoice Amount
+                    const displayAmount = isOpen ? currentAmount : originalAmount;
 
                     return (
                       <tr key={inv.id}>
@@ -2180,7 +2226,7 @@ const CustomerProfile = () => {
                           <div style={{fontSize: '11px', color: '#94a3b8'}}>{inv.document_create_date}</div>
                         </td>
                         <td style={styles.td}>
-                          ${amount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                          ${displayAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
                         </td>
                         <td style={styles.td}>
                           <span style={{
