@@ -1,9 +1,6 @@
-// ==========================================
-// FILE: src/pages/ClientDashboard.jsx
-// ==========================================
 import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore'; // Removed orderBy
+import { collection, query, where, getDocs } from 'firebase/firestore'; 
 import { Link, useNavigate } from 'react-router-dom';
 
 // --- HELPER: ZONE STYLES ---
@@ -13,14 +10,10 @@ const getZoneBadge = (zone, predictedDelay) => {
   };
 
   switch (zone) {
-    case "GREEN":
-      return <span style={{ ...styles, background: "#dcfce7", color: "#166534" }}>✅ On Track</span>;
-    case "YELLOW":
-      return <span style={{ ...styles, background: "#fef9c3", color: "#854d0e" }}>⚠️ Due Soon</span>;
-    case "ORANGE":
-      return <span style={{ ...styles, background: "#ffedd5", color: "#9a3412" }}>🟠 Risk of Delay</span>;
-    case "RED":
-      return <span style={{ ...styles, background: "#fee2e2", color: "#991b1b" }}>🚨 Critical / Overdue</span>;
+    case "GREEN": return <span style={{ ...styles, background: "#dcfce7", color: "#166534" }}>✅ On Track</span>;
+    case "YELLOW": return <span style={{ ...styles, background: "#fef9c3", color: "#854d0e" }}>⚠️ Due Soon</span>;
+    case "ORANGE": return <span style={{ ...styles, background: "#ffedd5", color: "#9a3412" }}>🟠 Risk of Delay</span>;
+    case "RED": return <span style={{ ...styles, background: "#fee2e2", color: "#991b1b" }}>🚨 Critical / Overdue</span>;
     default:
       if (predictedDelay > 5) return <span style={{ ...styles, background: "#fee2e2", color: "#991b1b" }}>🚨 Overdue</span>;
       return <span style={{ ...styles, background: "#f3f4f6", color: "#4b5563" }}>Open</span>;
@@ -45,27 +38,13 @@ const ClientDashboard = () => {
     const fetchClientCases = async () => {
       try {
         const casesRef = collection(db, "cases");
-        
-        // 🛠 FIX: Simplified Query
-        // 1. We ONLY filter by cust_number here.
-        // 2. We interpret 'isOpen', 'due_date', etc. in JavaScript to avoid Firestore index errors.
-        const q = query(
-          casesRef,
-          where("cust_number", "==", clientId)
-        );
-
+        const q = query(casesRef, where("cust_number", "==", clientId));
         const snapshot = await getDocs(q);
         
-        // --- CLIENT-SIDE PROCESSING ---
         const fetchedCases = snapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(c => {
-             // Robust check for "Open" status
-             // Checks for string "1", number 1, or boolean true
-             return c.isOpen == "1" || c.isOpen === 1 || c.isOpen === true || c.is_open_flag === true;
-          })
+          .filter(c => c.isOpen == "1" || c.isOpen === 1 || c.isOpen === true || c.is_open_flag === true)
           .sort((a, b) => {
-             // Robust Sort: Handles due_in_date OR due_date
              const dateA = a.due_in_date || a.due_date || "99999999";
              const dateB = b.due_in_date || b.due_date || "99999999";
              return dateB.localeCompare(dateA);
@@ -87,31 +66,26 @@ const ClientDashboard = () => {
     fetchClientCases();
   }, [clientId, navigate]);
 
-  // --- 1. SUBSIDIARY EXTRACTION ---
   const subsidiaries = useMemo(() => {
     const names = new Set(cases.map(c => c.name_customer || "Unknown Entity"));
     return ["All", ...Array.from(names).sort()];
   }, [cases]);
 
-  // --- 2. FILTERING LOGIC ---
   const filteredCases = useMemo(() => {
     if (selectedSubsidiary === "All") return cases;
     return cases.filter(c => (c.name_customer || "Unknown Entity") === selectedSubsidiary);
   }, [cases, selectedSubsidiary]);
 
-  // --- 3. FINANCIAL TOTALS ---
   const totals = useMemo(() => {
     return filteredCases.reduce((acc, curr) => {
       const amount = parseFloat(curr.total_open_amount || 0);
       acc.total += amount;
       
       const isRed = curr.zone === "RED";
-      // Handle both date field names
       const dateStr = curr.due_in_date || curr.due_date;
       let isPastDue = false;
       
       if (dateStr) {
-         // robust date parsing for YYYYMMDD
          let dateObj;
          if (String(dateStr).length === 8 && !String(dateStr).includes("-")) {
              const y = String(dateStr).substr(0,4), m = String(dateStr).substr(4,2), d = String(dateStr).substr(6,2);
@@ -200,7 +174,6 @@ const ClientDashboard = () => {
             </thead>
             <tbody>
               {filteredCases.map((c) => {
-                // Formatting Date with fallback for YYYYMMDD
                 const dateStr = c.due_in_date || c.due_date;
                 let formattedDate = "N/A";
                 if(dateStr) {
@@ -220,7 +193,7 @@ const ClientDashboard = () => {
                     </td>
                     <td style={styles.td}>
                       <span style={styles.subsidiaryBadge}>
-                         🏢 {c.name_customer}
+                          🏢 {c.name_customer}
                       </span>
                     </td>
                     <td style={styles.td}>{formattedDate}</td>
@@ -235,14 +208,27 @@ const ClientDashboard = () => {
                         <div style={styles.delayText}>Est. +{Math.round(c.predicted_delay)} days late</div>
                       )}
                     </td>
+                    
+                    {/* 🟢 THIS COLUMN IS WHERE THE BUTTON WAS MISSING */}
                     <td style={styles.td}>
-                      <Link 
-                        to={`/pay/${c.id}`}
-                        style={styles.payBtn}
-                      >
-                        Pay Now
-                      </Link>
+                      <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                        <Link 
+                          to={`/pay/${c.id}`}
+                          style={styles.payBtn}
+                        >
+                          Pay Now
+                        </Link>
+                        
+                        {/* 💬 ADDED NEGOTIATE BUTTON */}
+                        <button
+                            onClick={() => navigate(`/portal/negotiate/${c.id}`)}
+                            style={styles.negotiateBtn}
+                        >
+                            💬 Negotiate
+                        </button>
+                      </div>
                     </td>
+
                   </tr>
                 );
               })}
@@ -254,7 +240,6 @@ const ClientDashboard = () => {
   );
 };
 
-// --- STYLES ---
 const styles = {
   loader: { padding: "40px", textAlign: "center", color: "#666", fontSize: "1.2rem" },
   container: { maxWidth: "1200px", margin: "0 auto", paddingBottom: "60px", fontFamily: "'Inter', sans-serif" },
@@ -280,7 +265,13 @@ const styles = {
   subsidiaryBadge: { display: "inline-block", background: "#eff6ff", color: "#1e40af", padding: "4px 8px", borderRadius: "6px", fontSize: "0.85rem", fontWeight: "500" },
   amount: { fontWeight: "700", color: "#111827", fontSize: "1rem" },
   delayText: { fontSize: "0.75rem", color: "#ef4444", marginTop: "4px" },
-  payBtn: { display: "inline-block", background: "#FF6200", color: "white", padding: "10px 20px", borderRadius: "6px", textDecoration: "none", fontWeight: "600", fontSize: "0.9rem", transition: "background 0.2s" },
+  
+  // BUTTONS
+  payBtn: { display: "inline-block", background: "#FF6200", color: "white", padding: "8px 16px", borderRadius: "6px", textDecoration: "none", fontWeight: "600", fontSize: "0.85rem", transition: "background 0.2s" },
+  
+  // 🟢 NEGOTIATE BUTTON STYLE ADDED HERE
+  negotiateBtn: { background: "white", color: "#475569", border: "1px solid #cbd5e1", padding: "8px 12px", borderRadius: "6px", cursor: "pointer", fontWeight: "600", fontSize: "0.85rem", transition: "all 0.2s" },
+  
   emptyState: { padding: "60px", textAlign: "center", color: "#6b7280" }
 };
 

@@ -3,7 +3,7 @@
 // ==========================================
 
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
-import { useState } from "react";
+
 
 // Admin Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -22,6 +22,7 @@ import LandingPage from "./pages/LandingPage.jsx";
 import PaymentPortal from "./pages/PaymentPortal";
 import ClientLogin from "./pages/ClientLogin.jsx";
 import ClientDashboard from "./pages/ClientDashboard.jsx";
+import ClientNegotiation from "./pages/ClientNegotiation.jsx";
 
 // 1. Layout for Admin (Includes Navbar + Chatbot)
 const AdminLayout = () => (
@@ -98,6 +99,7 @@ function App() {
         <Route path="/portal" element={<ClientLayout />}>
           <Route index element={<ClientLogin />} />
           <Route path="dashboard" element={<ClientDashboard />} />
+          <Route path="negotiate/:id" element={<ClientNegotiation />} />
         </Route>
 
       </Routes>
