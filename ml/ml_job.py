@@ -50,23 +50,48 @@ def safe_to_datetime(series, fmt=None):
         return pd.to_datetime(series, format=fmt, errors="coerce")
     return pd.to_datetime(series, errors="coerce")
 
-def assign_zone(pred_delay, sla_days, sla_date, today=None):
+def assign_zone(pred_delay, sla_days, sla_date, today=None, predicted_payment_date=None):
+    """
+    Assigns a risk zone based on SLA and AI predictions.
+    
+    Logic:
+    1. RED:    Today >= SLA Date (Escalation)
+    2. GREEN:  Predicted Delay <= 0 (No Action)
+    3. YELLOW: Predicted Delay <= SLA AND Today <= Predicted Payment Date (Mail)
+    4. ORANGE: Predicted Delay > SLA OR Today > Predicted Payment Date (Call)
+    """
     if today is None:
         today = pd.Timestamp.today().normalize()
-    if sla_date is not None and today > sla_date:
+    
+    # Handle pandas NaT (Not a Time) or None for dates to prevent comparison errors
+    if pd.isna(sla_date): sla_date = None
+    if pd.isna(predicted_payment_date): predicted_payment_date = None
+
+    # --- PRIORITY 1: CRITICAL BREACH (RED) ---
+    # If today is ON or AFTER the SLA date, it's an immediate escalation.
+    if sla_date is not None and today >= sla_date:
         return "RED"
+
+    # Handle missing prediction data (Safety Fallback)
     if pred_delay is None or pd.isna(pred_delay):
         return "UNKNOWN"
+
+    # --- PRIORITY 2: SAFE (GREEN) ---
+    # If the customer is predicted to pay on or before the due date.
     if pred_delay <= 0:
         return "GREEN"
-    if sla_date is None:
-        return "ORANGE"
-    days_left = (sla_date - today).days
-    predicted_delay = math.ceil(pred_delay)
-    if predicted_delay < days_left:
-        return "YELLOW"
-    else:
-        return "ORANGE"
+
+    # --- PRIORITY 3: WATCH LIST (YELLOW) ---
+    # They are late, but within SLA limits, AND the AI prediction is still valid (not in the past).
+    if predicted_payment_date is not None:
+        if pred_delay <= sla_days and today <= predicted_payment_date:
+            return "YELLOW"
+
+    # --- PRIORITY 4: HIGH RISK (ORANGE) ---
+    # Catch-all for remaining cases:
+    # - Predicted delay exceeds SLA (Breach likely)
+    # - OR Today > Predicted Payment Date (AI prediction missed/overdue, high uncertainty)
+    return "ORANGE"
 
 def derive_sla_days(late_ratio):
     try:
@@ -307,6 +332,7 @@ def run_ml_job():
         try:
             if pd.notna(row["due_date"]):
                 sla_date = row["due_date"] + timedelta(days=sla_days)
+                # Keep escalated bool logic simple, but the 'zone' handles the new logic
                 escalated = today >= sla_date
             else:
                 sla_date = None
@@ -315,7 +341,14 @@ def run_ml_job():
             sla_date = None
             escalated = False
             
-        zone = assign_zone(pred_delay, sla_days, sla_date)
+        # 🟢 UPDATED FUNCTION CALL
+        zone = assign_zone(
+            pred_delay, 
+            sla_days, 
+            sla_date, 
+            today=today, 
+            predicted_payment_date=row["predicted_payment_date"]
+        )
 
         if zone == "GREEN": action = "NO_ACTION"
         elif zone == "YELLOW": action = "MAIL"
