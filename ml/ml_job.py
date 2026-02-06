@@ -7,11 +7,13 @@ import os
 import sys
 import json
 import time
+import random
 from tqdm import tqdm
 
 import firebase_admin
 from firebase_admin import firestore
 from google.cloud import firestore as google_firestore
+from google.api_core import exceptions
 
 # --------------------
 # CONFIG
@@ -20,7 +22,7 @@ os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8085"
 os.environ["GCLOUD_PROJECT"] = "fedex-dca"
 
 MODEL_PATH = "model/payment_delay_lgb_model.txt"
-BATCH_COMMIT_SIZE = 400
+BATCH_COMMIT_SIZE = 50 
 
 MODEL_FEATURES = [
     "total_open_amount", "due_days", "avg_due_days", "avg_payment_delay",
@@ -50,47 +52,47 @@ def safe_to_datetime(series, fmt=None):
         return pd.to_datetime(series, format=fmt, errors="coerce")
     return pd.to_datetime(series, errors="coerce")
 
-def assign_zone(pred_delay, sla_days, sla_date, today=None, predicted_payment_date=None):
+def assign_zone(pred_delay, sla_days, sla_date, due_date, today=None, predicted_payment_date=None):
     """
-    Assigns a risk zone based on SLA and AI predictions.
+    Assigns a risk zone based on Due Date, SLA, and AI predictions.
     
     Logic:
     1. RED:    Today >= SLA Date (Escalation)
-    2. GREEN:  Predicted Delay <= 0 (No Action)
+    2. GREEN:  Due Date is in the future (No Action)
     3. YELLOW: Predicted Delay <= SLA AND Today <= Predicted Payment Date (Mail)
     4. ORANGE: Predicted Delay > SLA OR Today > Predicted Payment Date (Call)
     """
     if today is None:
         today = pd.Timestamp.today().normalize()
     
-    # Handle pandas NaT (Not a Time) or None for dates to prevent comparison errors
     if pd.isna(sla_date): sla_date = None
+    if pd.isna(due_date): due_date = None
     if pd.isna(predicted_payment_date): predicted_payment_date = None
 
     # --- PRIORITY 1: CRITICAL BREACH (RED) ---
-    # If today is ON or AFTER the SLA date, it's an immediate escalation.
     if sla_date is not None and today >= sla_date:
         return "RED"
 
-    # Handle missing prediction data (Safety Fallback)
-    if pred_delay is None or pd.isna(pred_delay):
-        return "UNKNOWN"
-
-    # --- PRIORITY 2: SAFE (GREEN) ---
-    # If the customer is predicted to pay on or before the due date.
-    if pred_delay <= 0:
+    # --- PRIORITY 2: NOT DUE YET (GREEN) ---
+    # If the invoice hasn't reached its due date yet, no action is needed.
+    if due_date is not None and today < due_date:
         return "GREEN"
 
+    # Handle missing prediction data (Safety Fallback)
+    if pred_delay is None or pd.isna(pred_delay) or predicted_payment_date is None:
+        return "ORANGE"
+
     # --- PRIORITY 3: WATCH LIST (YELLOW) ---
-    # They are late, but within SLA limits, AND the AI prediction is still valid (not in the past).
-    if predicted_payment_date is not None:
-        if pred_delay <= sla_days and today <= predicted_payment_date:
-            return "YELLOW"
+    # We are past due, but:
+    # 1. The delay is within the SLA grace period.
+    # 2. The AI predicts they will pay in the future (we haven't passed the predicted date yet).
+    if pred_delay <= sla_days and today <= predicted_payment_date:
+        return "YELLOW"
 
     # --- PRIORITY 4: HIGH RISK (ORANGE) ---
-    # Catch-all for remaining cases:
-    # - Predicted delay exceeds SLA (Breach likely)
-    # - OR Today > Predicted Payment Date (AI prediction missed/overdue, high uncertainty)
+    # We are past due, and:
+    # 1. The predicted delay is longer than the SLA allowed.
+    # 2. OR The AI predicted they would pay by now, but they haven't (Missed Prediction).
     return "ORANGE"
 
 def derive_sla_days(late_ratio):
@@ -101,6 +103,22 @@ def derive_sla_days(late_ratio):
         else: return 15
     except Exception:
         return 15
+
+def commit_batch_safe(batch):
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            batch.commit()
+            time.sleep(0.05) 
+            return
+        except exceptions.Aborted as e:
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            print(f"   ⚠️ Transaction lock timeout. Retrying in {wait:.1f}s...")
+            time.sleep(wait)
+        except Exception as e:
+            print(f"   ❌ Batch commit failed: {e}")
+            raise e
+    print("   ❌ Max retries reached for batch. Skipping.")
 
 # --------------------
 # 3. MAIN JOB
@@ -124,7 +142,6 @@ def run_ml_job():
         d = doc.to_dict()
         d["_doc_id"] = doc.id
         
-        # Backfill original_amount if missing
         if "original_amount" not in d:
             current_total = d.get("total_open_amount", d.get("invoice_amount", 0))
             d["original_amount"] = current_total
@@ -137,12 +154,12 @@ def run_ml_job():
         rows.append(d)
 
         if batch_count >= BATCH_COMMIT_SIZE:
-            batch.commit()
+            commit_batch_safe(batch)
             batch = db.batch()
             batch_count = 0
     
     if batch_count > 0:
-        batch.commit()
+        commit_batch_safe(batch)
         print(f"✅ Backfilled 'original_amount' for {backfill_counter} cases.")
 
     if not rows:
@@ -198,18 +215,13 @@ def run_ml_job():
     history_df = df[~df["is_open_flag"]].copy()
     open_df = df[df["is_open_flag"]].copy()
 
-    # ==============================================================================
-    # 3.6 🛠️ FIX: BUILD COMPANY FEATURES FOR ALL CUSTOMERS (Open + Closed)
-    # ==============================================================================
+    # 3.6 Build Company Features
     print("Building Company Profile Features...")
 
-    # Step A: Get unique list of ALL customers (even those with no history)
-    # We group by ID and pick the most frequent name to handle variations
     all_customers = df.groupby("cust_number")["name_customer"].agg(
         lambda x: x.mode().iat[0] if not x.mode().empty else x.iloc[0]
     ).reset_index().rename(columns={"name_customer": "company_name"})
 
-    # Step B: Calculate stats ONLY for closed cases (History)
     if not history_df.empty:
         grp = history_df.groupby("cust_number")
         agg = grp.agg({
@@ -225,21 +237,16 @@ def run_ml_job():
         ]
         historical_stats = agg.reset_index()
 
-        # Ratio calc
         late_counts = history_df[history_df["payment_delay"] > 0].groupby("cust_number").size()
         total_counts = history_df.groupby("cust_number").size()
         late_ratio = (late_counts / total_counts).fillna(0).rename("late_payment_ratio").reset_index()
         
         historical_stats = historical_stats.merge(late_ratio, on="cust_number", how="left")
     else:
-        # Create empty DF with expected columns if no history exists at all
         historical_stats = pd.DataFrame(columns=["cust_number"])
 
-    # Step C: Left Join All Customers with History
-    # This ensures clients with only OPEN cases still get a row
     company_features = all_customers.merge(historical_stats, on="cust_number", how="left")
 
-    # Step D: Fill Cold-Start Defaults for new customers
     defaults = {
         "avg_payment_delay": 0.0, "std_payment_delay": 0.0,
         "min_delay": 0.0, "max_delay": 0.0,
@@ -249,7 +256,6 @@ def run_ml_job():
     }
     company_features.fillna(defaults, inplace=True)
 
-    # Persist company_features
     print(f"Persisting {len(company_features)} company feature docs...")
     batch = db.batch()
     commit_count = 0
@@ -274,11 +280,11 @@ def run_ml_job():
         batch.set(doc_ref, payload, merge=True)
         commit_count += 1
         if commit_count >= BATCH_COMMIT_SIZE:
-            batch.commit()
+            commit_batch_safe(batch)
             batch = db.batch()
             commit_count = 0
     if commit_count > 0:
-        batch.commit()
+        commit_batch_safe(batch)
 
     # 4. Enrich open invoices
     if open_df.empty:
@@ -288,7 +294,6 @@ def run_ml_job():
     print(f"Preparing {len(open_df)} open invoices for scoring...")
     open_df = open_df.merge(company_features, on="cust_number", how="left", suffixes=("", "_cf"))
 
-    # 5. Fill cold-start defaults (Safety check)
     for k, v in defaults.items():
         if k not in open_df.columns: open_df[k] = v
         else: open_df[k] = open_df[k].fillna(v)
@@ -332,7 +337,6 @@ def run_ml_job():
         try:
             if pd.notna(row["due_date"]):
                 sla_date = row["due_date"] + timedelta(days=sla_days)
-                # Keep escalated bool logic simple, but the 'zone' handles the new logic
                 escalated = today >= sla_date
             else:
                 sla_date = None
@@ -341,11 +345,12 @@ def run_ml_job():
             sla_date = None
             escalated = False
             
-        # 🟢 UPDATED FUNCTION CALL
+        # 🟢 UPDATED FUNCTION CALL: Now passing due_date
         zone = assign_zone(
             pred_delay, 
             sla_days, 
             sla_date, 
+            row["due_date"], # <--- NEW PARAMETER
             today=today, 
             predicted_payment_date=row["predicted_payment_date"]
         )
@@ -373,12 +378,12 @@ def run_ml_job():
         total_updates += 1
 
         if commit_count >= BATCH_COMMIT_SIZE:
-            batch.commit()
+            commit_batch_safe(batch)
             batch = db.batch()
             commit_count = 0
 
     if commit_count > 0:
-        batch.commit()
+        commit_batch_safe(batch)
 
     elapsed = time.time() - start_ts
     print(f"Updated {total_updates} open invoices. Elapsed: {elapsed:.1f}s")
